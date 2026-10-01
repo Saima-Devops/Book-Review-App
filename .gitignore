@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+*.pem
+*.key
+.terraform/
+*.tfstate*
+*.tfplan
+terraform.tfvars
+inventory.ini
+deployment-vars.json
+source.tar.gz

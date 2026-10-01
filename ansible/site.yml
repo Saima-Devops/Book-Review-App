@@ -1,0 +1,122 @@
+- name: Configure AWS VM and deploy Reading Room
+  hosts: app
+  become: true
+  gather_facts: false
+  vars:
+    app_dir: /opt/reading-room
+  pre_tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 600
+    - name: Gather facts
+      ansible.builtin.setup:
+  tasks:
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        name: [ca-certificates, curl, git, python3, tar]
+        state: present
+        update_cache: true
+    - name: Create keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+    - name: Download Docker repository signing key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+    - name: Add Docker repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts.distribution_release }} stable"
+        filename: docker
+        state: present
+    - name: Install Docker Engine and Compose v2
+      ansible.builtin.apt:
+        name: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
+        state: present
+        update_cache: true
+    - name: Enable Docker
+      ansible.builtin.service:
+        name: docker
+        enabled: true
+        state: started
+    - name: Add ubuntu to Docker group
+      ansible.builtin.user:
+        name: ubuntu
+        groups: docker
+        append: true
+    - name: Create project directory
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+    - name: Clone your public fork on first deployment
+      become_user: ubuntu
+      ansible.builtin.command:
+        cmd: "git clone {{ app_repo | quote }} {{ app_dir | quote }}"
+        creates: "{{ app_dir }}/.git"
+    - name: Remove obsolete cloned artifacts
+      ansible.builtin.file:
+        path: "{{ app_dir }}/{{ item }}"
+        state: absent
+      loop: [backend/.env, backend/node_modules, frontend/node_modules, azure-pipeline.yaml, azure-pipelines.yml, ansible]
+      no_log: true
+    - name: Transfer cleaned source archive
+      ansible.builtin.unarchive:
+        src: ../source.tar.gz
+        dest: "{{ app_dir }}"
+        owner: ubuntu
+        group: ubuntu
+    - name: Generate stable secrets only on first deployment
+      ansible.builtin.shell: |
+        python3 - <<'SCRIPT'
+        import secrets, os
+        path = '/opt/reading-room/.env'
+        if not os.path.exists(path):
+            os.umask(0o077)
+            with open(path, 'x') as f:
+                f.write('MYSQL_ROOT_PASSWORD='+secrets.token_hex(24)+'\n')
+                f.write('MYSQL_DATABASE=book_review_db\nMYSQL_USER=bookreview_user\n')
+                f.write('MYSQL_PASSWORD='+secrets.token_hex(24)+'\n')
+                f.write('JWT_SECRET='+secrets.token_hex(32)+'\n')
+        SCRIPT
+      args:
+        creates: "{{ app_dir }}/.env"
+      no_log: true
+    - name: Set public application addresses
+      ansible.builtin.lineinfile:
+        path: "{{ app_dir }}/.env"
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}={{ item.value }}"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+      loop:
+        - { key: ALLOWED_ORIGINS, value: "http://{{ ansible_host }}:3000" }
+        - { key: NEXT_PUBLIC_API_URL, value: "http://{{ ansible_host }}:3001" }
+      no_log: true
+      diff: false
+    - name: Build and start stack with readiness checks
+      tags: [deploy]
+      ansible.builtin.command:
+        cmd: docker compose up -d --build --wait --wait-timeout 300
+        chdir: "{{ app_dir }}"
+      register: compose_result
+      changed_when: true
+    - name: Confirm API responds
+      tags: [deploy]
+      ansible.builtin.uri:
+        url: http://127.0.0.1:3001/api/books
+        status_code: 200
+    - name: Confirm frontend responds
+      tags: [deploy]
+      ansible.builtin.uri:
+        url: http://127.0.0.1:3000
+        status_code: 200
+    - name: Deployment URL
+      tags: [deploy]
+      ansible.builtin.debug:
+        msg: "Saima Usman — http://{{ ansible_host }}:3000"
