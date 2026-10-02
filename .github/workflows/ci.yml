@@ -1,0 +1,140 @@
+name: Reading Room CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reading-room-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-and-config:
+    name: Backend and Deployment Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Install locked backend dependencies
+        run: npm --prefix backend ci
+      - name: Backend unit tests
+        run: npm --prefix backend test
+      - name: Dependency audit
+        run: npm --prefix backend audit --audit-level=high
+      - name: Environment and Compose configuration tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Shell and JavaScript syntax checks
+        run: |
+          for script in scripts/*.sh; do bash -n "$script"; done
+          while IFS= read -r script; do node --check "$script"; done < <(find backend/src backend/test backend/integration -name '*.js')
+          git diff --check
+
+  frontend-checks:
+    name: Frontend Lint and Audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm --prefix frontend ci
+      - run: npm --prefix frontend run lint
+      - run: npm --prefix frontend audit --audit-level=high
+
+  docker-integration:
+    name: Docker API and HTTPS Tests
+    needs: [backend-and-config, frontend-checks]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      # These credentials and volumes belong ONLY to this disposable runner.
+      COMPOSE_PROJECT_NAME: reading-room-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      COMPOSE_FILE: docker-compose.yml
+      DB_VOLUME_NAME: reading-room-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      APP_IMAGE_TAG: ci-${{ github.sha }}
+      PUBLIC_URL: http://127.0.0.1
+      MYSQL_DATABASE: ci_books
+      MYSQL_USER: ci_user
+      MYSQL_ROOT_PASSWORD: ci_root_password_not_for_production_1234
+      MYSQL_PASSWORD: ci_app_password_not_for_production_12345
+      JWT_SECRET: ci_jwt_secret_not_for_production_1234567
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Prepare proxy log permissions
+        run: |
+          sudo install -d -o 101 -g 101 -m 0750 logs/proxy
+          docker compose version
+          docker compose config --quiet
+      - name: Build and start production images
+        run: docker compose up -d --build --wait --wait-timeout 600
+      - name: Check Nginx routing, frontend, static assets, and readiness
+        run: |
+          bash scripts/verify.sh
+          for route in login register book/1; do
+            curl --fail --silent --show-error --max-time 30 "$PUBLIC_URL/$route" >/dev/null
+          done
+      - name: Run real API integration tests against disposable MySQL
+        env:
+          TEST_API_URL: http://127.0.0.1
+          ALLOW_TEST_WRITES: 'yes'
+        run: npm --prefix backend run test:integration
+      - name: Verify non-root runtime users
+        run: |
+          test "$(docker compose exec -T backend id -u)" = 1000
+          test "$(docker compose exec -T frontend id -u)" = 1000
+          test "$(docker compose exec -T reverse-proxy id -u)" = 101
+      - name: Check database persistence after a restart
+        run: |
+          curl --fail --silent --show-error "$PUBLIC_URL/api/books" | python3 -c 'import json,sys; print(json.dumps(sorted(json.load(sys.stdin), key=lambda b: b["id"]), sort_keys=True))' > /tmp/ci-books-before.json
+          docker compose restart database
+          docker compose up -d --wait --wait-timeout 180
+          curl --fail --silent --show-error "$PUBLIC_URL/api/books" | python3 -c 'import json,sys; print(json.dumps(sorted(json.load(sys.stdin), key=lambda b: b["id"]), sort_keys=True))' > /tmp/ci-books-after.json
+          cmp /tmp/ci-books-before.json /tmp/ci-books-after.json
+      - name: Test HTTPS overlay using a temporary CI-only certificate
+        run: |
+          sudo install -d -o 101 -g 101 -m 0755 tls/active
+          sudo openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 \
+            -keyout tls/active/privkey.pem -out tls/active/fullchain.pem \
+            -subj '/CN=127.0.0.1' -addext 'subjectAltName=IP:127.0.0.1'
+          sudo chown root:101 tls/active/privkey.pem
+          sudo chmod 0640 tls/active/privkey.pem
+          export COMPOSE_FILE=docker-compose.yml:docker-compose.https.yml
+          export PUBLIC_URL=https://127.0.0.1
+          export CURL_CA_BUNDLE="$PWD/tls/active/fullchain.pem"
+          docker compose run --rm --no-deps reverse-proxy -t
+          docker compose up -d --no-build --wait --wait-timeout 180
+          test "$(curl --silent --show-error -o /dev/null -w '%{http_code}' http://127.0.0.1/)" = 308
+          curl --silent --show-error -I http://127.0.0.1/ | tr -d '\r' | grep -i '^Location: https://127.0.0.1/$'
+          bash scripts/verify.sh
+      - name: Show diagnostics on failure
+        if: failure()
+        run: |
+          docker compose ps --all
+          docker compose logs --no-color --tail=100
+      - name: Remove only the disposable CI stack and its test volume
+        if: always()
+        run: docker compose down --volumes --remove-orphans
