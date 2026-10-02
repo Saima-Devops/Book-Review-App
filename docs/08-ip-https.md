@@ -138,7 +138,7 @@ export PUBLIC_URL="https://$CERT_IP"
 export SECRET_SOURCE=local
 python3 scripts/configure-env.py --non-interactive
 docker compose config --quiet
-docker compose run --rm --no-deps reverse-proxy nginx -t
+docker compose run --rm --no-deps reverse-proxy -t
 docker compose up -d --no-build --wait --wait-timeout 180
 ```
 
