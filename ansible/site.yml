@@ -1,122 +1,144 @@
-- name: Configure AWS VM and deploy Reading Room
-  hosts: app
+- name: Prepare or deploy Reading Room only when invoked by the operator
+  hosts: all
   become: true
   gather_facts: false
   vars:
-    app_dir: /opt/reading-room
+    app_dir: "{{ lookup('env', 'APP_DIR') }}"
+    app_repo: "{{ lookup('env', 'APP_REPO') }}"
+    app_ref: "{{ lookup('env', 'APP_REF') }}"
   pre_tasks:
     - name: Wait for SSH
+      tags: [always]
       ansible.builtin.wait_for_connection:
         timeout: 600
-    - name: Gather facts
+    - name: Gather host facts
+      tags: [always]
       ansible.builtin.setup:
   tasks:
-    - name: Install prerequisites
-      ansible.builtin.apt:
-        name: [ca-certificates, curl, git, python3, tar]
-        state: present
-        update_cache: true
-    - name: Create keyring directory
-      ansible.builtin.file:
-        path: /etc/apt/keyrings
-        state: directory
-        mode: '0755'
-    - name: Download Docker repository signing key
-      ansible.builtin.get_url:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        dest: /etc/apt/keyrings/docker.asc
-        mode: '0644'
-    - name: Add Docker repository
-      ansible.builtin.apt_repository:
-        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts.distribution_release }} stable"
-        filename: docker
-        state: present
-    - name: Install Docker Engine and Compose v2
-      ansible.builtin.apt:
-        name: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
-        state: present
-        update_cache: true
-    - name: Enable Docker
-      ansible.builtin.service:
-        name: docker
-        enabled: true
-        state: started
-    - name: Add ubuntu to Docker group
-      ansible.builtin.user:
-        name: ubuntu
-        groups: docker
-        append: true
-    - name: Create project directory
-      ansible.builtin.file:
-        path: "{{ app_dir }}"
-        state: directory
-        owner: ubuntu
-        group: ubuntu
-        mode: '0755'
-    - name: Clone your public fork on first deployment
-      become_user: ubuntu
-      ansible.builtin.command:
-        cmd: "git clone {{ app_repo | quote }} {{ app_dir | quote }}"
-        creates: "{{ app_dir }}/.git"
-    - name: Remove obsolete cloned artifacts
-      ansible.builtin.file:
-        path: "{{ app_dir }}/{{ item }}"
-        state: absent
-      loop: [backend/.env, backend/node_modules, frontend/node_modules, azure-pipeline.yaml, azure-pipelines.yml, ansible]
-      no_log: true
-    - name: Transfer cleaned source archive
-      ansible.builtin.unarchive:
-        src: ../source.tar.gz
-        dest: "{{ app_dir }}"
-        owner: ubuntu
-        group: ubuntu
-    - name: Generate stable secrets only on first deployment
-      ansible.builtin.shell: |
-        python3 - <<'SCRIPT'
-        import secrets, os
-        path = '/opt/reading-room/.env'
-        if not os.path.exists(path):
-            os.umask(0o077)
-            with open(path, 'x') as f:
-                f.write('MYSQL_ROOT_PASSWORD='+secrets.token_hex(24)+'\n')
-                f.write('MYSQL_DATABASE=book_review_db\nMYSQL_USER=bookreview_user\n')
-                f.write('MYSQL_PASSWORD='+secrets.token_hex(24)+'\n')
-                f.write('JWT_SECRET='+secrets.token_hex(32)+'\n')
-        SCRIPT
-      args:
-        creates: "{{ app_dir }}/.env"
-      no_log: true
-    - name: Set public application addresses
-      ansible.builtin.lineinfile:
-        path: "{{ app_dir }}/.env"
-        regexp: "^{{ item.key }}="
-        line: "{{ item.key }}={{ item.value }}"
-        owner: ubuntu
-        group: ubuntu
-        mode: '0600'
-      loop:
-        - { key: ALLOWED_ORIGINS, value: "http://{{ ansible_host }}:3000" }
-        - { key: NEXT_PUBLIC_API_URL, value: "http://{{ ansible_host }}:3001" }
-      no_log: true
-      diff: false
-    - name: Build and start stack with readiness checks
+    - name: Prepare the host and checkout the existing repository
+      tags: [prepare]
+      block:
+        - name: Install host prerequisites
+          ansible.builtin.apt:
+            name: [ca-certificates, curl, git, python3, awscli]
+            state: present
+            update_cache: true
+        - name: Create Docker keyring directory
+          ansible.builtin.file:
+            path: /etc/apt/keyrings
+            state: directory
+            mode: '0755'
+        - name: Download Docker repository signing key
+          ansible.builtin.get_url:
+            url: https://download.docker.com/linux/ubuntu/gpg
+            dest: /etc/apt/keyrings/docker.asc
+            mode: '0644'
+        - name: Configure Docker's Ubuntu repository
+          ansible.builtin.apt_repository:
+            repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts.distribution_release }} stable"
+            filename: docker
+            state: present
+        - name: Install Docker Engine and Compose
+          ansible.builtin.apt:
+            name: [docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin]
+            state: present
+            update_cache: true
+        - name: Enable Docker service
+          ansible.builtin.service:
+            name: docker
+            state: started
+            enabled: true
+        - name: Allow ubuntu to operate Docker
+          ansible.builtin.user:
+            name: ubuntu
+            groups: docker
+            append: true
+        - name: Create deployment directory
+          ansible.builtin.file:
+            path: "{{ app_dir }}"
+            state: directory
+            owner: ubuntu
+            group: ubuntu
+            mode: '0755'
+        - name: Checkout the operator's exact pushed commit
+          become_user: ubuntu
+          ansible.builtin.git:
+            repo: "{{ app_repo }}"
+            dest: "{{ app_dir }}"
+            version: "{{ app_ref }}"
+            update: true
+            force: false
+            accept_hostkey: false
+            key_file: "{{ lookup('env', 'GITHUB_DEPLOY_KEY') | default(omit, true) }}"
+        - name: Create protected backup directory
+          ansible.builtin.file:
+            path: "{{ app_dir }}/backups"
+            state: directory
+            owner: ubuntu
+            group: ubuntu
+            mode: '0700'
+        - name: Create proxy log directory for non-root Nginx
+          ansible.builtin.file:
+            path: "{{ app_dir }}/logs/proxy"
+            state: directory
+            owner: '101'
+            group: '101'
+            mode: '0750'
+        - name: Install host log rotation configuration
+          ansible.builtin.template:
+            src: proxy-logrotate.j2
+            dest: /etc/logrotate.d/reading-room-proxy
+            owner: root
+            group: root
+            mode: '0644'
+        - name: Preparation instructions
+          ansible.builtin.debug:
+            msg: "Prepared {{ app_dir }}. Configure secrets on the VM, then run the separate configure phase."
+
+    - name: Deploy the prepared checkout
       tags: [deploy]
-      ansible.builtin.command:
-        cmd: docker compose up -d --build --wait --wait-timeout 300
-        chdir: "{{ app_dir }}"
-      register: compose_result
-      changed_when: true
-    - name: Confirm API responds
-      tags: [deploy]
-      ansible.builtin.uri:
-        url: http://127.0.0.1:3001/api/books
-        status_code: 200
-    - name: Confirm frontend responds
-      tags: [deploy]
-      ansible.builtin.uri:
-        url: http://127.0.0.1:3000
-        status_code: 200
-    - name: Deployment URL
-      tags: [deploy]
-      ansible.builtin.debug:
-        msg: "Saima Usman — http://{{ ansible_host }}:3000"
+      block:
+        - name: Check prepared commit
+          ansible.builtin.command:
+            cmd: git rev-parse HEAD
+            chdir: "{{ app_dir }}"
+          register: checked_out_ref
+          changed_when: false
+        - name: Require the prepared commit to match deployment input
+          ansible.builtin.assert:
+            that: checked_out_ref.stdout == app_ref
+            fail_msg: "Run the prepare phase for the chosen APP_REF before configuring."
+        - name: Load Secrets Manager or refresh an existing local env file
+          become_user: ubuntu
+          ansible.builtin.command:
+            cmd: python3 scripts/configure-env.py --non-interactive
+            chdir: "{{ app_dir }}"
+          environment:
+            PUBLIC_URL: "{{ lookup('env', 'PUBLIC_URL') }}"
+            APP_IMAGE_TAG: "{{ lookup('env', 'APP_IMAGE_TAG') }}"
+            SECRET_SOURCE: "{{ lookup('env', 'SECRET_SOURCE') }}"
+            SECRET_ARN: "{{ lookup('env', 'SECRET_ARN') }}"
+            AWS_REGION: "{{ lookup('env', 'AWS_REGION') }}"
+            DB_VOLUME_NAME: "{{ lookup('env', 'DB_VOLUME_NAME') }}"
+          no_log: true
+        - name: Validate Compose without exposing values
+          ansible.builtin.command:
+            cmd: docker compose config --quiet
+            chdir: "{{ app_dir }}"
+          changed_when: false
+        - name: Build and start all services with readiness checks
+          ansible.builtin.command:
+            cmd: docker compose up -d --build --wait --wait-timeout 600
+            chdir: "{{ app_dir }}"
+          changed_when: true
+        - name: Verify database-backed health through Nginx
+          ansible.builtin.uri:
+            url: http://127.0.0.1/health
+            status_code: 200
+        - name: Verify frontend through Nginx
+          ansible.builtin.uri:
+            url: http://127.0.0.1/
+            status_code: 200
+        - name: Application URL
+          ansible.builtin.debug:
+            msg: "{{ lookup('env', 'PUBLIC_URL') }}"

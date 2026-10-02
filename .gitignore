@@ -14,3 +14,9 @@ terraform.tfvars
 inventory.ini
 deployment-vars.json
 source.tar.gz
+backups/
+logs/
+secrets.json
+secret-payload.json
+*.sql
+*.sql.gz

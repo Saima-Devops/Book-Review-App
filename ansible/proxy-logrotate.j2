@@ -1,0 +1,14 @@
+{{ app_dir }}/logs/proxy/*.log {
+    daily
+    rotate 14
+    maxsize 20M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0640
+    sharedscripts
+    postrotate
+        cd {{ app_dir }} && /usr/bin/docker compose kill -s USR1 reverse-proxy >/dev/null 2>&1 || true
+    endscript
+}

@@ -1,58 +1,121 @@
 name: reading-room
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-app: &app
+  restart: unless-stopped
+  init: true
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  logging: *logging
+  stop_grace_period: 30s
+
 services:
-  mysql:
-    image: mysql:8.4
+  reverse-proxy:
+    <<: *app
+    image: reading-room-proxy:${APP_IMAGE_TAG:-local}
+    build:
+      context: ./proxy
+      args:
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginxinc/nginx-unprivileged:stable-alpine}
+    ports: ["80:8080"]
+    networks: [front-tier]
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ./logs/proxy:/var/log/nginx
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    <<: *app
+    image: reading-room-frontend:${APP_IMAGE_TAG:-local}
+    build:
+      context: ./frontend
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        NEXT_PUBLIC_API_URL: /
+    networks: [front-tier]
+    read_only: true
+    tmpfs: [/tmp, /app/.next/cache:uid=1000,gid=1000,mode=0700]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  backend:
+    <<: *app
+    image: reading-room-backend:${APP_IMAGE_TAG:-local}
+    build:
+      context: ./backend
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: database
+      DB_PORT: 3306
+      DB_USER: ${MYSQL_USER:?Set MYSQL_USER}
+      DB_PASS: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+      DB_NAME: ${MYSQL_DATABASE:?Set MYSQL_DATABASE}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      ALLOWED_ORIGINS: ${PUBLIC_URL:?Set PUBLIC_URL}
+    networks: [front-tier, back-tier]
+    read_only: true
+    tmpfs: [/tmp]
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/books').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  database:
+    image: ${MYSQL_IMAGE:-mysql:8.4}
     restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    stop_grace_period: 60s
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-book_review_db}
-      MYSQL_USER: ${MYSQL_USER:-bookreview_user}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?Set MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER:?Set MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
+    networks: [back-tier]
     volumes:
-      - mysql_data:/var/lib/mysql
+      - db_data:/var/lib/mysql
     healthcheck:
       test: ["CMD-SHELL", 'MYSQL_PWD="$$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u "$$MYSQL_USER" -D "$$MYSQL_DATABASE" -e "SELECT 1" >/dev/null 2>&1']
       interval: 10s
       timeout: 5s
       retries: 30
       start_period: 40s
-  backend:
-    build: ./backend
-    restart: unless-stopped
-    environment:
-      PORT: 3001
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_USER: ${MYSQL_USER:-bookreview_user}
-      DB_PASS: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}
-      DB_NAME: ${MYSQL_DATABASE:-book_review_db}
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set ALLOWED_ORIGINS}
-    ports: ["3001:3001"]
-    depends_on:
-      mysql:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/books').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Set NEXT_PUBLIC_API_URL}
-    restart: unless-stopped
-    ports: ["3000:3000"]
-    depends_on:
-      backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 15s
-      timeout: 5s
-      retries: 20
-      start_period: 30s
+
+networks:
+  front-tier:
+    driver: bridge
+  back-tier:
+    driver: bridge
+    internal: true
+
 volumes:
-  mysql_data:
+  db_data:
+    name: ${DB_VOLUME_NAME:-reading-room_db_data}

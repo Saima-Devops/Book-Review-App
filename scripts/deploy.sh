@@ -1,39 +1,76 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-mode="${1:-plan}"
-for tool in terraform python3 tar; do command -v "$tool" >/dev/null || { echo "Install $tool first"; exit 1; }; done
+mode="${1:-help}"
+
+require() {
+  command -v "$1" >/dev/null || { echo "Install $1 first." >&2; exit 1; }
+}
+provision_inputs() {
+  : "${AWS_REGION:?Source scripts/runtime-inputs.sh first}"
+  : "${TF_VAR_region:?Missing region}"
+  : "${TF_VAR_instance_type:?Missing instance type}"
+  : "${TF_VAR_root_volume_size:?Missing disk size}"
+  : "${TF_VAR_ssh_cidr:?Missing SSH CIDR}"
+  : "${TF_VAR_public_key_path:?Missing public key}"
+  test "$AWS_REGION" = "$TF_VAR_region" || { echo "Region variables must match." >&2; exit 1; }
+}
 case "$mode" in
   plan)
+    require terraform
+    provision_inputs
     terraform -chdir=infra init
-    terraform -chdir=infra fmt
     terraform -chdir=infra validate
-    terraform -chdir=infra plan -out=reading-room.tfplan
+    # CLI values override any leftover terraform.tfvars from older deployments.
+    terraform -chdir=infra plan -out=reading-room.tfplan \
+      -var="region=$TF_VAR_region" \
+      -var="instance_type=$TF_VAR_instance_type" \
+      -var="root_volume_size=$TF_VAR_root_volume_size" \
+      -var="ssh_cidr=$TF_VAR_ssh_cidr" \
+      -var="public_key_path=$TF_VAR_public_key_path" \
+      -var="secret_arn=${TF_VAR_secret_arn:-}"
     ;;
   apply)
-    test -f infra/reading-room.tfplan || { echo 'Run ./scripts/deploy.sh plan first'; exit 1; }
+    require terraform
+    test -f infra/reading-room.tfplan || { echo "Run the plan command first." >&2; exit 1; }
+    # Applying a saved plan has no Terraform confirmation prompt.
+    read -r -p "Type apply to create/update the resources in the reviewed plan: " confirmation
+    test "$confirmation" = apply || { echo "Cancelled."; exit 1; }
     terraform -chdir=infra apply reading-room.tfplan
-    "$0" prepare
+    echo "Infrastructure phase complete. Preparation and deployment are separate commands."
     ;;
-  configure|prepare)
-    command -v ansible-playbook >/dev/null || { echo 'Install Ansible first'; exit 1; }
-    : "${SSH_KEY:?Set SSH_KEY to your private key path}"
-    : "${APP_REPO:?Set APP_REPO to your public GitHub fork URL}"
-    test -f "$SSH_KEY" || { echo 'Private key does not exist'; exit 1; }
-    app_ip="$(terraform -chdir=infra output -raw public_ip)"
-    python3 - "$app_ip" <<'SCRIPT'
-import sys, os, json, re
-from pathlib import Path
-repo = os.environ['APP_REPO']
-if not re.fullmatch(r'https://github.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?',repo):
-    raise SystemExit('APP_REPO must be a public GitHub HTTPS URL without credentials')
-Path('deployment-vars.json').write_text(json.dumps({'app_repo':repo}))
-Path('ansible/inventory.ini').write_text('[app]\nreading-room ansible_host='+sys.argv[1]+' ansible_user=ubuntu\n')
-SCRIPT
-    tar -czf source.tar.gz --exclude=node_modules --exclude=.next --exclude=.env --exclude='frontend/.env.*' --exclude='backend/.env.*' --exclude=.git frontend backend docker-compose.yml .env.example .gitignore
-    extra_args=()
-    if [ "$mode" = prepare ]; then extra_args+=(--skip-tags deploy); fi
-    ansible-playbook "${extra_args[@]}" --extra-vars @deployment-vars.json -i ansible/inventory.ini --private-key "$SSH_KEY" --ssh-common-args='-o StrictHostKeyChecking=accept-new' ansible/site.yml
+  prepare|configure)
+    require terraform
+    require ansible-playbook
+    : "${APP_REPO:?Set your existing repository URL}"
+    : "${APP_REF:?Set an exact Git commit SHA}"
+    : "${APP_DIR:?Set remote deployment directory}"
+    : "${SSH_KEY:?Set private key path}"
+    : "${AWS_REGION:?Set AWS_REGION}"
+    : "${SECRET_SOURCE:?Set local or aws}"
+    export APP_IP="${APP_IP:-$(terraform -chdir=infra output -raw public_ip)}"
+    export PUBLIC_URL="${PUBLIC_URL:-http://$APP_IP}"
+    export APP_IMAGE_TAG="${APP_IMAGE_TAG:-$APP_REF}"
+    export SECRET_ARN="${SECRET_ARN:-}"
+    export GITHUB_DEPLOY_KEY="${GITHUB_DEPLOY_KEY:-}"
+    test -f "$SSH_KEY" || { echo "Private key does not exist." >&2; exit 1; }
+    [[ "$APP_REF" =~ ^[a-fA-F0-9]{40}$ ]] || { echo "APP_REF must be a full Git commit SHA." >&2; exit 1; }
+    [[ "$APP_DIR" =~ ^/[a-zA-Z0-9/_-]+$ ]] || { echo "APP_DIR must be a simple absolute path." >&2; exit 1; }
+    [[ "$APP_REPO" =~ ^https://github.com/[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+(\.git)?$ || "$APP_REPO" =~ ^git@github.com:[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+(\.git)?$ ]] || { echo "Use a GitHub repository URL without embedded credentials." >&2; exit 1; }
+    [[ "$SECRET_SOURCE" = local || "$SECRET_SOURCE" = aws ]] || { echo "SECRET_SOURCE must be local or aws." >&2; exit 1; }
+    if [ "$SECRET_SOURCE" = aws ]; then : "${SECRET_ARN:?Set SECRET_ARN}"; fi
+    tags=prepare
+    if [ "$mode" = configure ]; then tags=deploy; fi
+    ansible-playbook --tags "$tags" -i "$APP_IP," -u ubuntu \
+      --private-key "$SSH_KEY" --ssh-common-args='-o StrictHostKeyChecking=yes' ansible/site.yml
     ;;
-  *) echo 'Usage: ./scripts/deploy.sh [plan|apply|prepare|configure]'; exit 1;;
+  help|--help|-h)
+    echo "Run each phase yourself: bash scripts/deploy.sh [plan|apply|prepare|configure]"
+    echo "First: source scripts/runtime-inputs.sh"
+    echo "plan/apply do not deploy. prepare installs tools/checks out code. configure starts services."
+    ;;
+  *)
+    echo "Unknown phase: $mode" >&2
+    exit 1
+    ;;
 esac
