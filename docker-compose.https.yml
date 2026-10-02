@@ -1,0 +1,8 @@
+# Optional overlay. configure-env.py selects it only for an HTTPS PUBLIC_URL.
+services:
+  reverse-proxy:
+    ports:
+      - "443:8443"
+    volumes:
+      - ./proxy/nginx.https.conf:/etc/nginx/nginx.conf:ro
+      - ./tls/active:/etc/nginx/tls:ro

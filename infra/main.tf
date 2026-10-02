@@ -17,6 +17,11 @@ variable "region" {
 variable "instance_type" {
   type = string
 }
+variable "enable_https" {
+  type        = bool
+  default     = false
+  description = "Open public TCP 443 for the optional IP-certificate deployment."
+}
 variable "root_volume_size" {
   type = number
   validation {
@@ -94,6 +99,15 @@ resource "aws_security_group" "app" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+  dynamic "ingress" {
+    for_each = var.enable_https ? [443] : []
+    content {
+      from_port   = ingress.value
+      to_port     = ingress.value
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
   }
   egress {
     from_port   = 0

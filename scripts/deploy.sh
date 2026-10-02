@@ -28,7 +28,8 @@ case "$mode" in
       -var="root_volume_size=$TF_VAR_root_volume_size" \
       -var="ssh_cidr=$TF_VAR_ssh_cidr" \
       -var="public_key_path=$TF_VAR_public_key_path" \
-      -var="secret_arn=${TF_VAR_secret_arn:-}"
+      -var="secret_arn=${TF_VAR_secret_arn:-}" \
+      -var="enable_https=${TF_VAR_enable_https:-false}"
     ;;
   apply)
     require terraform

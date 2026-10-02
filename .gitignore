@@ -16,6 +16,7 @@ deployment-vars.json
 source.tar.gz
 backups/
 logs/
+tls/
 secrets.json
 secret-payload.json
 *.sql

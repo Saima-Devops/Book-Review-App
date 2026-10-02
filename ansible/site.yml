@@ -155,7 +155,7 @@
             status_code: 200
         - name: Verify frontend through Nginx
           ansible.builtin.uri:
-            url: http://127.0.0.1/
+            url: "{{ lookup('env', 'PUBLIC_URL') if lookup('env', 'PUBLIC_URL').startswith('https://') else 'http://127.0.0.1/' }}"
             status_code: 200
         - name: Application URL
           ansible.builtin.debug:

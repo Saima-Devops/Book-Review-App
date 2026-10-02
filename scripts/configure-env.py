@@ -72,10 +72,16 @@ def main():
 
     public_url = runtime('PUBLIC_URL')
     parsed = urlsplit(public_url)
-    if parsed.scheme != 'http' or not parsed.hostname or parsed.path or parsed.query or parsed.fragment or parsed.username or parsed.password or parsed.port not in (None, 80):
-        raise ValueError('PUBLIC_URL must be an HTTP origin without path or trailing slash. This stack listens on port 80; TLS needs an additional configuration.')
+    ports = {'http': 80, 'https': 443}
+    if parsed.scheme not in ports or not parsed.hostname or parsed.path or parsed.query or parsed.fragment or parsed.username or parsed.password or parsed.port not in (None, ports.get(parsed.scheme)):
+        raise ValueError('PUBLIC_URL must be an HTTP or HTTPS origin on its standard port, without path or trailing slash.')
+    if parsed.scheme == 'https':
+        for filename in ('fullchain.pem', 'privkey.pem'):
+            if not (root / 'tls' / 'active' / filename).is_file():
+                raise ValueError('Issue the IP certificate first; see docs/08-ip-https.md.')
     values.update({
         'PUBLIC_URL': public_url,
+        'COMPOSE_FILE': 'docker-compose.yml:docker-compose.https.yml' if parsed.scheme == 'https' else 'docker-compose.yml',
         'APP_IMAGE_TAG': runtime('APP_IMAGE_TAG', 'local'),
         'DB_VOLUME_NAME': runtime('DB_VOLUME_NAME', 'reading-room_db_data'),
         'NODE_IMAGE': runtime('NODE_IMAGE', 'node:22-alpine'),
