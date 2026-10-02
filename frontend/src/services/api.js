@@ -48,6 +48,15 @@ export const fetchBookDetails = async (bookId) => {
   }
 };
 
+export const addBook = async (bookData) => {
+  try {
+    const response = await axios.post(`${API_URL}/books`, bookData);
+    return response.data;
+  } catch (error) {
+    throw new Error(handleApiError(error, "Failed to add book"));
+  }
+};
+
 // ---------------------- Reviews ----------------------
 
 export const fetchReviews = async (bookId) => {
@@ -67,6 +76,24 @@ export const submitReview = async (reviewData, token) => {
     return response.data;
   } catch (error) {
     throw new Error(handleApiError(error, "Failed to submit review"));
+  }
+};
+
+export const updateReview = async (reviewId, reviewData) => {
+  try {
+    const response = await axios.put(`${API_URL}/reviews/${reviewId}`, reviewData);
+    return response.data;
+  } catch (error) {
+    throw new Error(handleApiError(error, "Failed to update review"));
+  }
+};
+
+export const deleteReview = async (reviewId) => {
+  try {
+    const response = await axios.delete(`${API_URL}/reviews/${reviewId}`);
+    return response.data;
+  } catch (error) {
+    throw new Error(handleApiError(error, "Failed to delete review"));
   }
 };
 

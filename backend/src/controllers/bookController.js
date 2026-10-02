@@ -31,17 +31,22 @@ module.exports = (sequelize) => {
     addBook: async (req, res) => {
       try {
         const { title, author, rating } = req.body;
+        const normalizedRating = Number(rating || 0);
 
-        if (!title || !author || !rating) {
-          return res.status(400).json({ message: "Title, author, and rating are required" });
+        if (!title?.trim() || !author?.trim()) {
+          return res.status(400).json({ message: "Title and author are required" });
         }
 
-        const existingBook = await Book.findOne({ where: { title, author } });
+        if (!Number.isFinite(normalizedRating) || normalizedRating < 0 || normalizedRating > 5) {
+          return res.status(400).json({ message: "Rating must be between 0 and 5" });
+        }
+
+        const existingBook = await Book.findOne({ where: { title: title.trim(), author: author.trim() } });
         if (existingBook) {
           return res.status(400).json({ message: "Book already exists" });
         }
 
-        const newBook = await Book.create({ title, author, rating });
+        const newBook = await Book.create({ title: title.trim(), author: author.trim(), rating: normalizedRating });
 
         res.status(201).json({ message: "Book added successfully", book: newBook });
       } catch (error) {
