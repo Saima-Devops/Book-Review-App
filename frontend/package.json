@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:lint-glob": "node --test tooling/next-lint-glob/glob.test.cjs"
   },
   "dependencies": {
     "axios": "1.20.0",
@@ -20,9 +21,13 @@
     "@tailwindcss/postcss": "4.3.3",
     "eslint": "9.39.5",
     "eslint-config-next": "15.5.27",
+    "fast-glob": "file:tooling/next-lint-glob",
     "tailwindcss": "4.3.3"
   },
   "overrides": {
+    "@next/eslint-plugin-next": {
+      "fast-glob": "$fast-glob"
+    },
     "next": {
       "postcss": "8.5.28"
     }

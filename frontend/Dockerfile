@@ -2,6 +2,7 @@ ARG NODE_IMAGE=node:22-alpine
 FROM ${NODE_IMAGE} AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY tooling/next-lint-glob ./tooling/next-lint-glob
 RUN npm ci
 
 FROM ${NODE_IMAGE} AS build
