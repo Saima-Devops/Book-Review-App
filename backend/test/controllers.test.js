@@ -16,7 +16,7 @@ function response() {
 
 // Inject models through the existing Sequelize factory, without changing app code.
 function fixture() {
-  const book = { id: 10, update: mock.fn(async () => {}) };
+  const book = { id: 10, uploadedBy: 1, update: mock.fn(async () => {}), destroy: mock.fn(async () => {}) };
   const review = {
     id: 20, userId: 1, bookId: 10,
     update: mock.fn(async () => {}), destroy: mock.fn(async () => {}),
@@ -29,6 +29,7 @@ function fixture() {
       create: mock.fn(async (data) => ({ id: 10, ...data })),
     },
     Review: {
+      destroy: mock.fn(async () => 1),
       findAll: mock.fn(async () => [{ rating: 5 }, { rating: 2 }]),
       findByPk: mock.fn(async () => review),
       create: mock.fn(async (data) => ({ id: 20, ...data })),
@@ -39,7 +40,10 @@ function fixture() {
       create: mock.fn(async (data) => ({ id: 1, ...data })),
     },
   };
-  return { book, review, models, sequelize: { define: (name) => models[name] } };
+  return { book, review, models, sequelize: {
+    define: (name) => models[name],
+    transaction: mock.fn(async (operation) => operation({ LOCK: { UPDATE: 'UPDATE' } })),
+  } };
 }
 
 test('books can be listed and looked up', async () => {
@@ -64,9 +68,9 @@ test('missing book returns 404', async () => {
 test('new book trims fields and defaults rating to zero', async () => {
   const f = fixture();
   const res = response();
-  await books(f.sequelize).addBook({ body: { title: ' New Book ', author: ' Author ' } }, res);
+  await books(f.sequelize).addBook({ user: { userId: 1 }, body: { title: ' New Book ', author: ' Author ' } }, res);
   assert.equal(res.code, 201);
-  assert.deepEqual(res.body.book, { id: 10, title: 'New Book', author: 'Author', rating: 0 });
+  assert.deepEqual(res.body.book, { id: 10, title: 'New Book', author: 'Author', rating: 0, synopsis: '', uploadedBy: 1 });
 });
 
 for (const body of [
@@ -102,7 +106,7 @@ for (const rating of [1, 2, 3, 4, 5]) {
     assert.equal(res.body.review.username, 'Reader');
     assert.equal(res.body.review.userId, 1);
     assert.equal(res.body.review.rating, rating);
-    assert.deepEqual(f.book.update.mock.calls[0].arguments, [{ rating: 3.5 }]);
+    assert.deepEqual(f.book.update.mock.calls[0].arguments[0], { rating: 3.5 });
   });
 }
 
@@ -151,7 +155,7 @@ test('deleting the final review resets the book rating to zero', async () => {
   await reviews(f.sequelize).deleteReview({ user: { userId: 1 }, params: { id: 20 } }, res);
   assert.equal(res.code, 200);
   assert.equal(f.review.destroy.mock.callCount(), 1);
-  assert.deepEqual(f.book.update.mock.calls[0].arguments, [{ rating: 0 }]);
+  assert.deepEqual(f.book.update.mock.calls[0].arguments[0], { rating: 0 });
 });
 
 test('registration stores a bcrypt hash rather than plaintext', async () => {

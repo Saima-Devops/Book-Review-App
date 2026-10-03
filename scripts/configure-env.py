@@ -40,6 +40,8 @@ def main():
 
     source = os.environ.get('SECRET_SOURCE', 'local')
     keys = ('MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_ROOT_PASSWORD', 'MYSQL_PASSWORD', 'JWT_SECRET')
+    mail_keys = ('SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM')
+    mail_payload = {}
     if source == 'aws':
         arn = runtime('SECRET_ARN')
         region = runtime('AWS_REGION')
@@ -49,6 +51,7 @@ def main():
             check=True, capture_output=True, text=True,
         )
         payload = json.loads(result.stdout)
+        mail_payload = {key: str(payload[key]) for key in mail_keys if key in payload}
         values = {key: payload[key] for key in keys}
         for key, value in values.items():
             os.environ[key] = str(value)
@@ -88,6 +91,8 @@ def main():
         'MYSQL_IMAGE': runtime('MYSQL_IMAGE', 'mysql:8.4'),
         'NGINX_IMAGE': runtime('NGINX_IMAGE', 'nginxinc/nginx-unprivileged:stable-alpine'),
     })
+    for key in mail_keys:
+        values[key] = os.environ.get(key, mail_payload.get(key, existing.get(key, '587' if key == 'SMTP_PORT' else '')))
     if not re.fullmatch(r'[A-Za-z0-9_.-]+', values['APP_IMAGE_TAG']):
         raise ValueError('APP_IMAGE_TAG is not a valid image tag.')
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]+', values['DB_VOLUME_NAME']):

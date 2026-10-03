@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import {
   deleteReview,
   fetchBookDetails,
@@ -119,13 +120,24 @@ export default function BookDetails() {
     }
   };
 
-  if (!book) return <p className="text-center">Loading book details...</p>;
+  if (!book) return error ? (
+    <div className="book-detail p-6">
+      <p className="error" role="alert">{error}</p>
+      <Link href="/#collection">Back to the collection</Link>
+    </div>
+  ) : <p className="text-center" role="status">Loading book details...</p>;
 
   return (
     <div className="min-h-screen p-6 book-detail">
       <h1 className="text-3xl font-bold">{book.title}</h1>
       <p className="text-gray-600">by {book.author}</p>
       <p className="text-sm mt-2">★ {Number(book.rating).toFixed(1)}/5</p>
+      {book.synopsis && (
+        <section className="synopsis-detail" aria-labelledby="synopsis-title">
+          <h2 id="synopsis-title">Synopsis</h2>
+          <p>{book.synopsis}</p>
+        </section>
+      )}
 
       <h2 className="text-2xl mt-6">Reviews</h2>
       {message && <p className="success">{message}</p>}

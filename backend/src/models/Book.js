@@ -5,6 +5,8 @@ module.exports = (sequelize) => {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
     title: { type: DataTypes.STRING, allowNull: false },
     author: { type: DataTypes.STRING, allowNull: false },
+    synopsis: { type: DataTypes.TEXT, allowNull: true },
+    uploadedBy: { type: DataTypes.INTEGER, allowNull: true },
     rating: { type: DataTypes.FLOAT, defaultValue: 0 },
   });
 };

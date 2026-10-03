@@ -7,9 +7,9 @@ module.exports = (sequelize) => {
   const Book = BookModel(sequelize);
   const User = UserModel(sequelize);
 
-  const updateBookRating = async (bookId) => {
-    const reviews = await Review.findAll({ where: { bookId } });
-    const book = await Book.findByPk(bookId);
+  const updateBookRating = async (bookId, transaction) => {
+    const reviews = await Review.findAll({ where: { bookId }, transaction });
+    const book = await Book.findByPk(bookId, { transaction });
 
     if (!book) return;
 
@@ -17,7 +17,7 @@ module.exports = (sequelize) => {
       ? reviews.reduce((total, review) => total + Number(review.rating), 0) / reviews.length
       : 0;
 
-    await book.update({ rating: Number(nextRating.toFixed(1)) });
+    await book.update({ rating: Number(nextRating.toFixed(1)) }, { transaction });
   };
 
   const isValidRating = (rating) => {
@@ -41,22 +41,20 @@ module.exports = (sequelize) => {
           return res.status(400).json({ message: "User not found" });
         }
 
-        // Check if the book exists
-        const book = await Book.findByPk(bookId);
-        if (!book) {
+        // Share the book lock with deletion so a review cannot outlive its book.
+        const newReview = await sequelize.transaction(async (transaction) => {
+          const book = await Book.findByPk(bookId, { transaction, lock: transaction.LOCK.UPDATE });
+          if (!book) return null;
+          const created = await Review.create({
+            userId, bookId, comment, rating, username: user.name,
+          }, { transaction });
+          await updateBookRating(bookId, transaction);
+          return created;
+        });
+        if (!newReview) {
           return res.status(404).json({ message: "Book not found" });
         }
 
-        // Create a new review with username and timestamp
-        const newReview = await Review.create({
-          userId,
-          bookId,
-          comment,
-          rating,
-          username: user.name, // Store username
-        });
-
-        await updateBookRating(bookId);
         res.status(201).json({ message: "Review added successfully", review: newReview });
       } catch (error) {
         res.status(500).json({ message: "Server error" });

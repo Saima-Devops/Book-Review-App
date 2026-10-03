@@ -37,7 +37,9 @@ async function startServer() {
     const Review = require("./models/Review")(sequelize);
 
     // Sync database in the correct order (Users -> Books -> Reviews)
+    await require("./config/migrateUserFields")(sequelize, User);
     await User.sync();
+    await require("./config/migrateBookFields")(sequelize, Book);
     await Book.sync();
     await Review.sync();
 

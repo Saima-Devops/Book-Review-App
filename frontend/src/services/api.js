@@ -29,6 +29,21 @@ export const loginUser = async (userData) => {
 };
 
 // ---------------------- Books ----------------------
+export const requestPasswordReset = async (email) => {
+  try {
+    return (await axios.post(`${API_URL}/users/forgot-password`, { email })).data;
+  } catch (error) {
+    throw new Error(handleApiError(error, "Unable to request password reset"));
+  }
+};
+
+export const resetPassword = async (token, password) => {
+  try {
+    return (await axios.post(`${API_URL}/users/reset-password`, { token, password })).data;
+  } catch (error) {
+    throw new Error(handleApiError(error, "Unable to reset password"));
+  }
+};
 
 export const fetchBooks = async () => {
   try {
@@ -54,6 +69,15 @@ export const addBook = async (bookData) => {
     return response.data;
   } catch (error) {
     throw new Error(handleApiError(error, "Failed to add book"));
+  }
+};
+
+export const deleteBook = async (bookId) => {
+  try {
+    const response = await axios.delete(`${API_URL}/books/${bookId}`);
+    return response.data;
+  } catch (error) {
+    throw new Error(handleApiError(error, "Failed to delete book"));
   }
 };
 

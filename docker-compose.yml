@@ -77,6 +77,12 @@ services:
       DB_NAME: ${MYSQL_DATABASE:?Set MYSQL_DATABASE}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       ALLOWED_ORIGINS: ${PUBLIC_URL:?Set PUBLIC_URL}
+      PUBLIC_URL: ${PUBLIC_URL:?Set PUBLIC_URL}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     networks: [front-tier, back-tier]
     read_only: true
     tmpfs: [/tmp]

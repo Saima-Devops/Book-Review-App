@@ -20,6 +20,7 @@ class EnvironmentTests(unittest.TestCase):
         shutil.copy(ROOT / 'scripts/configure-env.py', self.root / 'scripts/configure-env.py')
         self.env = {key: value for key, value in os.environ.items() if key not in KEYS + (
             'PUBLIC_URL', 'SECRET_SOURCE', 'APP_IMAGE_TAG', 'DB_VOLUME_NAME', 'ALLOW_SECRET_UPDATE',
+            'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD', 'SMTP_FROM',
         )}
         self.env.update(
             SECRET_SOURCE='local', MYSQL_DATABASE='ci_books', MYSQL_USER='ci_user',
@@ -81,6 +82,17 @@ class EnvironmentTests(unittest.TestCase):
 
     def test_short_new_secret_is_rejected(self):
         self.assertNotEqual(self.configure(JWT_SECRET='short').returncode, 0)
+
+    def test_optional_mail_settings_are_preserved_without_disclosing_credentials(self):
+        settings = dict(SMTP_HOST='smtp.example.test', SMTP_PORT='465',
+                        SMTP_USER='reader@example.test', SMTP_PASSWORD='mail_app_password_123',
+                        SMTP_FROM='reader@example.test')
+        result = self.configure(**settings)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn(settings['SMTP_PASSWORD'], result.stdout + result.stderr)
+        self.assertEqual(self.configure().returncode, 0)
+        for key, value in settings.items():
+            self.assertEqual(self.values()[key], value)
 
 
 @unittest.skipUnless(shutil.which('docker'), 'Docker Compose CLI is required; no daemon needed')

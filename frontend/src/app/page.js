@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { addBook, fetchBooks } from "../services/api";
+import { addBook, deleteBook, fetchBooks } from "../services/api";
 import { useUser } from "../context/UserContext";
 
 export default function Home() {
@@ -13,11 +13,15 @@ export default function Home() {
   const [sort, setSort] = useState("rating");
   const [saved, setSaved] = useState([]);
   const [onlySaved, setOnlySaved] = useState(false);
-  const [newBook, setNewBook] = useState({ title: "", author: "", rating: 5 });
+  const [newBook, setNewBook] = useState({ title: "", author: "", synopsis: "", rating: 5 });
+  const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [collectionMessage, setCollectionMessage] = useState("");
+  const [collectionError, setCollectionError] = useState("");
   const [bookMessage, setBookMessage] = useState("");
   const [bookError, setBookError] = useState("");
 
-  const savedKey = user?.id ? `shelf-saved-${user.id}` : "shelf-saved-guest";
+  const savedKey = user?.id ? `shelf-saved-${user.id}` : null;
 
   useEffect(() => {
     fetchBooks()
@@ -28,9 +32,9 @@ export default function Home() {
 
   useEffect(() => {
     try {
+      if (!savedKey) { setSaved([]); return; }
       const userSaved = JSON.parse(localStorage.getItem(savedKey) || "[]");
-      const legacySaved = JSON.parse(localStorage.getItem("shelf-saved") || "[]");
-      setSaved(userSaved.length ? userSaved : legacySaved);
+      setSaved(Array.isArray(userSaved) ? userSaved : []);
     } catch {
       setSaved([]);
     }
@@ -57,11 +61,13 @@ export default function Home() {
   }, [books, onlySaved, query, saved, sort]);
 
   const saveFavourites = (nextSaved) => {
+    if (!user || !savedKey || !localStorage.getItem("token")) return;
     setSaved(nextSaved);
     localStorage.setItem(savedKey, JSON.stringify(nextSaved));
   };
 
   const toggle = (id) => {
+    if (!user || !localStorage.getItem("token")) return;
     const next = saved.includes(id)
       ? saved.filter((savedId) => savedId !== id)
       : [...saved, id];
@@ -79,12 +85,32 @@ export default function Home() {
     }
 
     try {
+      setUploading(true);
       const response = await addBook(newBook);
       setBooks((currentBooks) => [response.book, ...currentBooks]);
-      setNewBook({ title: "", author: "", rating: 5 });
+      setNewBook({ title: "", author: "", synopsis: "", rating: 5 });
       setBookMessage("Book uploaded to the collection.");
     } catch (err) {
       setBookError(err.message || "Failed to add book.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleBookDelete = async (book) => {
+    if (!window.confirm(`Delete "${book.title}" and all its reviews? This cannot be undone.`)) return;
+    setCollectionError("");
+    setCollectionMessage("");
+    setDeletingId(book.id);
+    try {
+      await deleteBook(book.id);
+      setBooks((currentBooks) => currentBooks.filter((item) => item.id !== book.id));
+      saveFavourites(saved.filter((savedId) => savedId !== book.id));
+      setCollectionMessage("Book and its reviews deleted.");
+    } catch (err) {
+      setCollectionError(err.message);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -101,7 +127,7 @@ export default function Home() {
           <p>
             Discover thoughtful books. Share honest reviews.
             <br />
-            Build a shelf that feels like you.
+            Build a personal bookshelf of stories you love.
           </p>
           <a href="#collection" className="primary">
             Explore the collection
@@ -111,7 +137,7 @@ export default function Home() {
           <div className="book-spine">IDEAS</div>
           <div className="book-spine second">STORIES</div>
           <div className="book-spine third">DISCOVERY</div>
-          <span>One book. A thousand possibilities.</span>
+          <span>Between the covers, a new world awaits.</span>
         </div>
       </section>
 
@@ -128,6 +154,7 @@ export default function Home() {
               value={newBook.title}
               onChange={(event) => setNewBook({ ...newBook, title: event.target.value })}
               placeholder="Book title"
+              maxLength={255}
               required
             />
           </label>
@@ -137,12 +164,14 @@ export default function Home() {
               value={newBook.author}
               onChange={(event) => setNewBook({ ...newBook, author: event.target.value })}
               placeholder="Author name"
+              maxLength={255}
               required
             />
           </label>
           <label>
-            Starting rating
+            Rating
             <select
+              aria-label="Rating"
               value={newBook.rating}
               onChange={(event) => setNewBook({ ...newBook, rating: Number(event.target.value) })}
             >
@@ -153,11 +182,21 @@ export default function Home() {
               ))}
             </select>
           </label>
-          <button className="primary" type="submit">
-            Upload book
+          <label className="synopsis-field">
+            Synopsis
+            <textarea
+              value={newBook.synopsis}
+              onChange={(event) => setNewBook({ ...newBook, synopsis: event.target.value })}
+              placeholder="A short summary of the book"
+              maxLength={2000}
+              rows={3}
+            />
+          </label>
+          <button className="primary upload-submit" type="submit" disabled={uploading}>
+            {uploading ? "Uploading..." : "Upload book"}
           </button>
-          {bookMessage && <p className="success">{bookMessage}</p>}
-          {bookError && <p className="error">{bookError}</p>}
+          {bookMessage && <p className="success form-message" role="status">{bookMessage}</p>}
+          {bookError && <p className="error form-message" role="alert">{bookError}</p>}
         </form>
       </section>
 
@@ -196,6 +235,8 @@ export default function Home() {
             <option value="title">Title A-Z</option>
           </select>
         </div>
+        {collectionMessage && <p className="success" role="status">{collectionMessage}</p>}
+        {collectionError && <p className="error" role="alert">{collectionError}</p>}
         {loading ? (
           <p role="status">Opening the bookshelf...</p>
         ) : error ? (
@@ -204,9 +245,9 @@ export default function Home() {
           </p>
         ) : (
           <div className="book-grid">
-            {visible.map((book, index) => (
+            {visible.map((book) => (
               <article className="book-card" key={book.id}>
-                <div className={`cover cover-${index % 3}`}>
+                <div className={`cover cover-${Number(book.id) % 3}`}>
                   <span className="cover-label">THE READER&apos;S EDITION</span>
                   <h3>{book.title}</h3>
                   <p>{book.author}</p>
@@ -215,6 +256,8 @@ export default function Home() {
                     aria-label={`${saved.includes(book.id) ? "Remove from" : "Add to"} favourites: ${book.title}`}
                     aria-pressed={saved.includes(book.id)}
                     onClick={() => toggle(book.id)}
+                    disabled={!user}
+                    title={user ? "Save to your favourites" : "Log in to save favourites"}
                     type="button"
                   >
                     {saved.includes(book.id) ? "♥" : "♡"}
@@ -226,7 +269,19 @@ export default function Home() {
                   </span>
                   <h3>{book.title}</h3>
                   <p>{book.author}</p>
+                  {book.synopsis && <p className="book-synopsis">{book.synopsis}</p>}
                   <Link href={`/book/${book.id}`}>Read & review</Link>
+                  {user && user.id === book.uploadedBy && (
+                    <button
+                      className="chip danger delete-book"
+                      type="button"
+                      aria-label={`Delete book: ${book.title}`}
+                      disabled={deletingId !== null}
+                      onClick={() => handleBookDelete(book)}
+                    >
+                      {deletingId === book.id ? "Deleting..." : "Delete book"}
+                    </button>
+                  )}
                 </div>
               </article>
             ))}
@@ -260,7 +315,7 @@ export default function Home() {
             ))}
           </div>
         ) : (
-          <p>Choose the heart on any book to save it here.</p>
+          <p>{user ? "Choose the heart on any book to save it here." : <Link href="/login">Log in to save your favourites.</Link>}</p>
         )}
       </section>
     </div>

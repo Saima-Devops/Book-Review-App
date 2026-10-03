@@ -16,8 +16,10 @@
     "cors": "2.8.6",
     "dotenv": "16.6.1",
     "express": "4.22.3",
+    "express-rate-limit": "8.7.0",
     "jsonwebtoken": "9.0.3",
     "mysql2": "3.24.5",
+    "nodemailer": "10.0.14",
     "sequelize": "6.37.8"
   },
   "overrides": {

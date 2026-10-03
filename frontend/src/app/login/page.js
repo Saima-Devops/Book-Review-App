@@ -3,9 +3,11 @@ import { useState } from "react";
 import { loginUser } from "../../services/api";
 import { useUser } from "../../context/UserContext";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [pending, setPending] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
   const { login } = useUser();
@@ -14,46 +16,55 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    setPending(true);
 
     try {
-      const data = await loginUser({ email, password });
+      const data = await loginUser({ username, password });
       login(data.token, data.user); // Pass token & user info to context
       router.push("/");
     } catch (err) {
       setError(err.message || "Login failed");
+    } finally {
+      setPending(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+    <div className="auth-shell min-h-screen flex items-center justify-center bg-gray-100">
       <div className="bg-white p-6 rounded-lg shadow-md w-full max-w-md">
         <h2 className="text-2xl font-bold text-center mb-4">Login</h2>
         {error && <p className="text-red-500 text-center">{error}</p>}
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label className="block text-gray-700">Email</label>
+            <label htmlFor="username" className="block text-gray-700">Username</label>
             <input
-              type="email"
+              id="username"
+              type="text"
+              autoComplete="username"
+              maxLength={255}
               className="w-full p-2 border rounded mt-1"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
             />
           </div>
           <div className="mb-4">
-            <label className="block text-gray-700">Password</label>
+            <label htmlFor="password" className="block text-gray-700">Password</label>
             <input
               type="password"
+              id="password"
+              autoComplete="current-password"
               className="w-full p-2 border rounded mt-1"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
           </div>
-          <button className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
-            Login
+          <button disabled={pending} className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
+            {pending ? "Logging in..." : "Login"}
           </button>
         </form>
+        <Link className="auth-link" href="/forgot-password">Forgot password?</Link>
       </div>
     </div>
   );
