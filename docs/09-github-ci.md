@@ -114,6 +114,8 @@ Only the frontend, backend, and proxy are published; MySQL data, accounts,
 reviews, runtime secrets, and TLS certificates are not included in the images.
 Images use the runner's Linux/AMD64 architecture; ARM64 variants are not built.
 Public frontend configuration is built for same-origin routing through the proxy.
+For separate Northflank services, the frontend can instead forward `/api/*`
+using the runtime `BACKEND_API_ORIGIN` setting. See `docs/10-northflank-aiven.md`.
 
 Pull requests and manually dispatched runs never publish or receive registry
 credentials. Main runs are serialized rather than canceled midway through a
