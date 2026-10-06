@@ -29,6 +29,23 @@ export const loginUser = async (userData) => {
 };
 
 // ---------------------- Books ----------------------
+export const searchCatalogBooks = async (query, signal) => {
+  try {
+    return (await axios.get(`${API_URL}/books/catalog/search`, { params: { q: query }, signal, timeout: 20000 })).data.books;
+  } catch (error) {
+    if (axios.isCancel(error)) throw error;
+    throw new Error(handleApiError(error, "Book lookup is unavailable. You can still enter the book manually."));
+  }
+};
+
+export const fetchCatalogBook = async (catalogId, signal) => {
+  try {
+    return (await axios.get(`${API_URL}/books/catalog/${encodeURIComponent(catalogId)}`, { signal, timeout: 20000 })).data;
+  } catch (error) {
+    if (axios.isCancel(error)) throw error;
+    throw new Error(handleApiError(error, "Description unavailable. You can write your own synopsis."));
+  }
+};
 export const requestPasswordReset = async (email) => {
   try {
     return (await axios.post(`${API_URL}/users/forgot-password`, { email })).data;

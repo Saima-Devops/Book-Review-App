@@ -2,11 +2,13 @@
 import { useState } from "react";
 import { registerUser } from "../../services/api";
 import { useRouter } from "next/navigation";
+import ConfirmationDialog from "../../components/ConfirmationDialog";
 
 export default function Register() {
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [pending, setPending] = useState(false);
+  const [registered, setRegistered] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
@@ -14,13 +16,13 @@ export default function Register() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (pending || registered) return;
     setError(null);
     setPending(true);
 
     try {
       await registerUser({ name, username, email, password });
-      alert("Registration successful! Please log in.");
-      router.push("/login"); // Redirect to login page
+      setRegistered(true);
     } catch (err) {
       setError(err.message || "Registration failed");
     } finally {
@@ -78,11 +80,12 @@ export default function Register() {
               required
             />
           </div>
-          <button disabled={pending} className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700">
+          <button disabled={pending || registered} className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700">
             {pending ? "Registering..." : "Register"}
           </button>
         </form>
       </div>
+      <ConfirmationDialog open={registered} title="Welcome to Book Shelf!" message="Your account is ready. Log in to start your next chapter." confirmLabel="Go to login" onConfirm={() => router.push("/login")} />
     </div>
   );
 }

@@ -70,7 +70,7 @@ test('new book trims fields and defaults rating to zero', async () => {
   const res = response();
   await books(f.sequelize).addBook({ user: { userId: 1 }, body: { title: ' New Book ', author: ' Author ' } }, res);
   assert.equal(res.code, 201);
-  assert.deepEqual(res.body.book, { id: 10, title: 'New Book', author: 'Author', rating: 0, synopsis: '', uploadedBy: 1 });
+  assert.deepEqual(res.body.book, { id: 10, title: 'New Book', author: 'Author', rating: 0, synopsis: '', uploadedBy: 1, catalogId: null, sourceUrl: null });
 });
 
 for (const body of [

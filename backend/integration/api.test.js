@@ -103,3 +103,24 @@ test('concurrent review creation and book deletion never leave orphaned reviews'
   assert.deepEqual(await request(`/api/reviews/${book.id}`), []);
   await request(`/api/books/${book.id}`, {}, 404);
 });
+
+test('catalog routes require login and catalog sources persist without unsafe links', async () => {
+  await request('/api/books/catalog/search?q=Example', {}, 401);
+  await request('/api/books/catalog/OL123W', {}, 401);
+  const suffix = randomUUID();
+  const account = { name: 'Catalog Reader', username: `catalog-${suffix.slice(0, 16)}`, email: `catalog-${suffix}@example.test`, password: 'integration-password' };
+  await request('/api/users/register', { method: 'POST', body: account }, 201);
+  const { token } = await request('/api/users/login', { method: 'POST', body: { username: account.username, password: account.password } });
+  await request('/api/books/catalog/search?q=a', { token }, 400);
+  await request('/api/books/catalog/invalid', { token }, 400);
+  const catalogId = `OL${String(Date.now()).slice(-10)}W`;
+  const input = { title: `Catalog fixture ${suffix}`, author: 'Fixture Author', synopsis: 'An edited catalog synopsis.', catalogId };
+  await request('/api/books', { method: 'POST', body: { ...input, sourceUrl: 'javascript:alert(1)' }, token }, 400);
+  const { book } = await request('/api/books', { method: 'POST', body: input, token }, 201);
+  const stored = await request(`/api/books/${book.id}`);
+  assert.equal(stored.catalogId, catalogId);
+  assert.equal(stored.sourceUrl, `https://openlibrary.org/works/${catalogId}`);
+  assert.equal(stored.synopsis, input.synopsis);
+  await request('/api/books', { method: 'POST', body: { ...input, title: `Alternate title ${suffix}`, author: 'Alternate Author' }, token }, 400);
+  await request(`/api/books/${book.id}`, { method: 'DELETE', token });
+});

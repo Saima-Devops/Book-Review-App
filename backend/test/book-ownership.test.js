@@ -77,11 +77,13 @@ test('migration adds only missing nullable fields and is safe to repeat', async 
   const sequelize = { getQueryInterface: () => query };
   const Book = { getTableName: () => 'Books' };
   await migrate(sequelize, Book);
-  assert.equal(query.addColumn.mock.callCount(), 2);
+  assert.equal(query.addColumn.mock.callCount(), 4);
   assert.equal(columns.synopsis.allowNull, true);
   assert.equal(columns.uploadedBy.allowNull, true);
+  assert.equal(columns.catalogId.unique, true);
+  assert.equal(columns.sourceUrl.allowNull, true);
   await migrate(sequelize, Book);
-  assert.equal(query.addColumn.mock.callCount(), 2);
+  assert.equal(query.addColumn.mock.callCount(), 4);
 });
 
 test('fresh databases defer table creation to the existing model sync', async () => {

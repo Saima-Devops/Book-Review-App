@@ -132,6 +132,7 @@ export default function BookDetails() {
       <h1 className="text-3xl font-bold">{book.title}</h1>
       <p className="text-gray-600">by {book.author}</p>
       <p className="text-sm mt-2">★ {Number(book.rating).toFixed(1)}/5</p>
+      {book.sourceUrl && <a className="catalog-source" href={book.sourceUrl} target="_blank" rel="noopener noreferrer">View on Open Library</a>}
       {book.synopsis && (
         <section className="synopsis-detail" aria-labelledby="synopsis-title">
           <h2 id="synopsis-title">Synopsis</h2>
@@ -198,7 +199,7 @@ export default function BookDetails() {
       )}
 
       {user ? (
-        <form onSubmit={handleReviewSubmit} className="mt-4 p-4 border rounded">
+        <form id="write-review" onSubmit={handleReviewSubmit} className="mt-4 p-4 border rounded">
           <h3 className="text-xl">Add a Review</h3>
           <textarea
             className="w-full p-2 border rounded mt-2"
@@ -213,7 +214,7 @@ export default function BookDetails() {
           </button>
         </form>
       ) : (
-        <p className="login-note">Log in to post your review.</p>
+        <p id="write-review" className="login-note">Log in to post your review.</p>
       )}
     </div>
   );

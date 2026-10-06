@@ -20,8 +20,8 @@ module.exports = () => {
     // URL fragments are not sent to web servers or recorded in proxy request logs.
     link.hash = new URLSearchParams({ token }).toString();
     await transport.sendMail({
-      from: SMTP_FROM, to: email, subject: "Reset your Reading Room password",
-      text: `A password reset was requested for your Reading Room account.\n\n${link.href}\n\nThis link expires in 30 minutes and can be used once. If you did not request this, ignore this email.`,
+      from: SMTP_FROM, to: email, subject: "Reset your Book Shelf password",
+      text: `A password reset was requested for your Book Shelf account.\n\n${link.href}\n\nThis link expires in 30 minutes and can be used once. If you did not request this, ignore this email.`,
     });
   };
 };

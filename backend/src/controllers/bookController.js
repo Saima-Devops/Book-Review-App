@@ -1,5 +1,7 @@
 const BookModel = require("../models/Book");
 const ReviewModel = require("../models/Review");
+const { Op } = require("sequelize");
+const { VALID_ID, sourceUrl } = require("../services/bookCatalog");
 
 module.exports = (sequelize) => {
   const Book = BookModel(sequelize);
@@ -32,7 +34,7 @@ module.exports = (sequelize) => {
 
     addBook: async (req, res) => {
       try {
-        const { title, author, rating, synopsis = "" } = req.body;
+        const { title, author, rating, synopsis = "", catalogId = null, sourceUrl: submittedSource = null } = req.body;
         const normalizedRating = Number(rating || 0);
 
         if (typeof title !== "string" || typeof author !== "string" || !title.trim() || !author.trim()) {
@@ -50,8 +52,13 @@ module.exports = (sequelize) => {
         if (!Number.isFinite(normalizedRating) || normalizedRating < 0 || normalizedRating > 5) {
           return res.status(400).json({ message: "Rating must be between 0 and 5" });
         }
+        if ((catalogId !== null && (typeof catalogId !== "string" || !VALID_ID.test(catalogId))) ||
+            (submittedSource !== null && (!catalogId || submittedSource !== sourceUrl(catalogId)))) {
+          return res.status(400).json({ message: "Choose a valid catalog book or enter the book manually." });
+        }
 
-        const existingBook = await Book.findOne({ where: { title: title.trim(), author: author.trim() } });
+        const match = { title: title.trim(), author: author.trim() };
+        const existingBook = await Book.findOne({ where: catalogId ? { [Op.or]: [match, { catalogId }] } : match });
         if (existingBook) {
           return res.status(400).json({ message: "Book already exists" });
         }
@@ -59,10 +66,12 @@ module.exports = (sequelize) => {
         const newBook = await Book.create({
           title: title.trim(), author: author.trim(), rating: normalizedRating,
           synopsis: synopsis.trim(), uploadedBy: req.user.userId,
+          catalogId, sourceUrl: catalogId ? sourceUrl(catalogId) : null,
         });
 
         res.status(201).json({ message: "Book added successfully", book: newBook });
       } catch (error) {
+        if (error.name === "SequelizeUniqueConstraintError") return res.status(400).json({ message: "Book already exists" });
         res.status(500).json({ message: "Server error while adding book", error });
       }
     },

@@ -1,8 +1,11 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { ChevronDown, PenLine } from "lucide-react";
 import { addBook, deleteBook, fetchBooks } from "../services/api";
 import { useUser } from "../context/UserContext";
+import BookTitleLookup from "../components/BookTitleLookup";
+import ConfirmationDialog from "../components/ConfirmationDialog";
 
 export default function Home() {
   const { user } = useUser();
@@ -13,9 +16,12 @@ export default function Home() {
   const [sort, setSort] = useState("rating");
   const [saved, setSaved] = useState([]);
   const [onlySaved, setOnlySaved] = useState(false);
-  const [newBook, setNewBook] = useState({ title: "", author: "", synopsis: "", rating: 5 });
+  const [newBook, setNewBook] = useState({ title: "", author: "", synopsis: "", rating: 5, catalogId: null, sourceUrl: null });
   const [uploading, setUploading] = useState(false);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [bookToDelete, setBookToDelete] = useState(null);
+  const [uploadedBook, setUploadedBook] = useState("");
   const [collectionMessage, setCollectionMessage] = useState("");
   const [collectionError, setCollectionError] = useState("");
   const [bookMessage, setBookMessage] = useState("");
@@ -76,6 +82,7 @@ export default function Home() {
 
   const handleBookSubmit = async (event) => {
     event.preventDefault();
+    if (uploading || catalogLoading) return;
     setBookError("");
     setBookMessage("");
 
@@ -88,8 +95,9 @@ export default function Home() {
       setUploading(true);
       const response = await addBook(newBook);
       setBooks((currentBooks) => [response.book, ...currentBooks]);
-      setNewBook({ title: "", author: "", synopsis: "", rating: 5 });
+      setNewBook({ title: "", author: "", synopsis: "", rating: 5, catalogId: null, sourceUrl: null });
       setBookMessage("Book uploaded to the collection.");
+      setUploadedBook(response.book.title);
     } catch (err) {
       setBookError(err.message || "Failed to add book.");
     } finally {
@@ -98,7 +106,7 @@ export default function Home() {
   };
 
   const handleBookDelete = async (book) => {
-    if (!window.confirm(`Delete "${book.title}" and all its reviews? This cannot be undone.`)) return;
+    if (deletingId !== null) return;
     setCollectionError("");
     setCollectionMessage("");
     setDeletingId(book.id);
@@ -107,6 +115,7 @@ export default function Home() {
       setBooks((currentBooks) => currentBooks.filter((item) => item.id !== book.id));
       saveFavourites(saved.filter((savedId) => savedId !== book.id));
       setCollectionMessage("Book and its reviews deleted.");
+      setBookToDelete(null);
     } catch (err) {
       setCollectionError(err.message);
     } finally {
@@ -145,24 +154,15 @@ export default function Home() {
         <div>
           <span className="eyebrow">ADD TO THE SHELF</span>
           <h2 id="upload-book-title">Upload a book</h2>
-          <p>Share a title with the community so readers can review it.</p>
+          <p>Add your favorite book and its synopsis to the collection, and invite the community to review it.</p>
         </div>
         <form onSubmit={handleBookSubmit}>
-          <label>
-            Book title
-            <input
-              value={newBook.title}
-              onChange={(event) => setNewBook({ ...newBook, title: event.target.value })}
-              placeholder="Book title"
-              maxLength={255}
-              required
-            />
-          </label>
+          <BookTitleLookup book={newBook} setBook={setNewBook} enabled={Boolean(user)} disabled={uploading} onBusyChange={setCatalogLoading} />
           <label>
             Author
             <input
               value={newBook.author}
-              onChange={(event) => setNewBook({ ...newBook, author: event.target.value })}
+              onChange={(event) => setNewBook({ ...newBook, author: event.target.value, catalogId: null, sourceUrl: null })}
               placeholder="Author name"
               maxLength={255}
               required
@@ -170,6 +170,7 @@ export default function Home() {
           </label>
           <label>
             Rating
+            <div className="select-field">
             <select
               aria-label="Rating"
               value={newBook.rating}
@@ -181,10 +182,13 @@ export default function Home() {
                 </option>
               ))}
             </select>
+            <ChevronDown size={16} aria-hidden="true" />
+            </div>
           </label>
           <label className="synopsis-field">
             Synopsis
             <textarea
+              aria-label="Synopsis"
               value={newBook.synopsis}
               onChange={(event) => setNewBook({ ...newBook, synopsis: event.target.value })}
               placeholder="A short summary of the book"
@@ -192,7 +196,7 @@ export default function Home() {
               rows={3}
             />
           </label>
-          <button className="primary upload-submit" type="submit" disabled={uploading}>
+          <button className="primary upload-submit" type="submit" disabled={uploading || catalogLoading}>
             {uploading ? "Uploading..." : "Upload book"}
           </button>
           {bookMessage && <p className="success form-message" role="status">{bookMessage}</p>}
@@ -226,6 +230,7 @@ export default function Home() {
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
+          <div className="select-field sort-field">
           <select
             aria-label="Sort books"
             value={sort}
@@ -234,6 +239,8 @@ export default function Home() {
             <option value="rating">Highest rated</option>
             <option value="title">Title A-Z</option>
           </select>
+          <ChevronDown size={16} aria-hidden="true" />
+          </div>
         </div>
         {collectionMessage && <p className="success" role="status">{collectionMessage}</p>}
         {collectionError && <p className="error" role="alert">{collectionError}</p>}
@@ -270,18 +277,21 @@ export default function Home() {
                   <h3>{book.title}</h3>
                   <p>{book.author}</p>
                   {book.synopsis && <p className="book-synopsis">{book.synopsis}</p>}
-                  <Link href={`/book/${book.id}`}>Read & review</Link>
-                  {user && user.id === book.uploadedBy && (
+                  {book.sourceUrl && <a className="book-source" href={book.sourceUrl} target="_blank" rel="noopener noreferrer">View on Open Library</a>}
+                  <div className="book-card-actions">
+                    <Link className="primary review-book" href={`/book/${book.id}#write-review`}><PenLine size={16} aria-hidden="true" />Write a Review</Link>
+                    {user && user.id === book.uploadedBy && (
                     <button
-                      className="chip danger delete-book"
+                      className="delete-book"
                       type="button"
                       aria-label={`Delete book: ${book.title}`}
                       disabled={deletingId !== null}
-                      onClick={() => handleBookDelete(book)}
+                      onClick={() => { setCollectionError(""); setBookToDelete(book); }}
                     >
                       {deletingId === book.id ? "Deleting..." : "Delete book"}
                     </button>
-                  )}
+                    )}
+                  </div>
                 </div>
               </article>
             ))}
@@ -318,6 +328,8 @@ export default function Home() {
           <p>{user ? "Choose the heart on any book to save it here." : <Link href="/login">Log in to save your favourites.</Link>}</p>
         )}
       </section>
+      <ConfirmationDialog open={Boolean(uploadedBook)} title="Book added to the shelf!" message={`"${uploadedBook}" is now in the collection, ready for the community to review.`} onConfirm={() => setUploadedBook("")} />
+      <ConfirmationDialog open={Boolean(bookToDelete)} title="Delete this book?" message={`Are you sure you want to delete "${bookToDelete?.title || ""}"? Its reviews will also be removed. This cannot be undone.`} confirmLabel="Delete book" destructive pending={deletingId !== null} error={collectionError} onConfirm={() => bookToDelete && handleBookDelete(bookToDelete)} onCancel={() => { if (deletingId === null) setBookToDelete(null); }} />
     </div>
   );
 }

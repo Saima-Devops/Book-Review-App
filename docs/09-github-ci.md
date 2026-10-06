@@ -1,11 +1,11 @@
-# GitHub Actions Tests
+# GitHub Actions CI and Docker Hub Delivery
 
 The workflow `.github/workflows/ci.yml` runs on pushes to `main`, pull requests
 targeting `main`, and manual runs from the GitHub Actions tab. It uses GitHub's
 temporary Ubuntu runners, not your EC2 instance. No AWS credentials, SSH keys,
-production passwords, IP certificate, or GitHub repository secrets are needed.
-AWS provisioning and deployment remain manual. This is the CI/test stage of a
-CI/CD pipeline, not an automatic EC2 deployment workflow.
+production passwords, or IP certificate are needed. CI tests do not need secrets;
+publishing on pushes to `main` requires the two Docker Hub secrets below.
+This delivers tested images to Docker Hub, not an automatic EC2 deployment.
 
 ## What Gets Tested
 
@@ -59,15 +59,84 @@ locally. GitHub runners have Docker, so they execute those tests.
    package script update, workflow, and this guide to your existing repository.
 2. Push the commit to `main`, or open a pull request into `main`.
 3. Open your repository on GitHub and select **Actions**.
-4. Select **Reading Room CI** and open the newest run.
+4. Select **Book Shelf CI and Docker Hub Delivery** and open the newest run.
 5. Check **Backend and Deployment Tests**, **Frontend Lint and Audit**, and
    **Docker API and HTTPS Tests**. All three should be green.
-6. For a manual rerun, select **Run workflow**, choose your branch, and confirm.
+6. **Run workflow** runs tests only. Rerunning an original `main` push also retries
+   publishing, using a new run-attempt build tag.
 7. If a job fails, expand its failing step. The Docker job prints container status
    and recent logs before cleaning up. Fix the cause and push a new commit.
 
 For pull requests, repository rules can require these three job checks before
 merging. Check names appear after the first workflow run.
+
+## Configure Docker Hub Publishing
+
+1. Sign in to Docker Hub as `saim2026`. Open **Repositories > Create repository**.
+   Select namespace `saim2026`, enter name `book-shelf`, choose **Public**, and
+   create it. Only this one repository is needed. Public visibility lets others
+   pull the images without your credentials.
+2. In Docker account settings, create a personal access token for GitHub Actions
+   with Read and Write access, without Delete access. Give it an expiration date.
+   Never add the token to `.env`, source code, a screenshot, or a chat message.
+3. In `Saima-Devops/Book-Review-App`, open **Settings > Secrets and variables >
+   Actions > New repository secret**. Create `DOCKERHUB_USERNAME` with value
+   `saim2026`, and `DOCKERHUB_TOKEN` with the token value.
+4. Review and commit your application changes, the workflow, publishing script,
+   publishing tests, and this guide. Push to `main` yourself.
+5. Open the newest Actions run. Publishing runs only after both earlier jobs
+   and every Docker/API/HTTPS check pass. Inspect **CD - Publish tested images
+   to Docker Hub** and the run summary for the published tags.
+6. Open `saim2026/book-shelf` on Docker Hub and select **Tags**. Each service gets
+   `<service>-build-<run-number>-<attempt>`, `<service>-sha-<full-commit-SHA>`, and
+   `<service>-latest`. For example: `saim2026/book-shelf:frontend-build-123-1`.
+
+All images share one repository, so tags include the service name to avoid
+overwriting each other:
+
+| Service | Version example | Latest |
+| --- | --- | --- |
+| Frontend | `frontend-build-123-1` | `frontend-latest` |
+| Backend | `backend-build-123-1` | `backend-latest` |
+| Reverse proxy | `proxy-build-123-1` | `proxy-latest` |
+
+A bare `latest` tag cannot represent three separate application images. It is
+not published; always specify the service tag when pulling an image. For example:
+
+```bash
+docker pull saim2026/book-shelf:frontend-latest
+docker pull saim2026/book-shelf:backend-latest
+docker pull saim2026/book-shelf:proxy-latest
+```
+
+The publisher tags the exact images tested on the runner, not a second build.
+Only the frontend, backend, and proxy are published; MySQL data, accounts,
+reviews, runtime secrets, and TLS certificates are not included in the images.
+Images use the runner's Linux/AMD64 architecture; ARM64 variants are not built.
+Public frontend configuration is built for same-origin routing through the proxy.
+
+Pull requests and manually dispatched runs never publish or receive registry
+credentials. Main runs are serialized rather than canceled midway through a
+publication. An older rerun can publish historical versions but cannot promote
+the service's latest tags when its commit is no longer the current `main` head.
+All versioned image pushes finish before any latest tags are updated. Docker
+Hub does not update three tags atomically: if promotion partially fails,
+use the matching build number and attempt across all services and rerun the failed workflow.
+Build tags identify a specific attempt; SHA and latest tags can be updated on
+reruns. Use a registry digest when an immutable image reference is required.
+
+Missing secrets or a rejected token fail publishing clearly while leaving the
+test results visible. Give the token Write permission and verify that the
+`book-shelf` repository belongs to `saim2026`. Rotate expired tokens in GitHub secrets.
+No AWS credentials or infrastructure changes are required.
+
+Authentication uses `--password-stdin` and a private, temporary Docker config
+directory removed when publishing exits. Registry credentials are never passed
+as build arguments or copied into application images.
+
+References: [Docker access tokens](https://docs.docker.com/security/access-tokens/),
+[Docker login](https://docs.docker.com/reference/cli/docker/login/), and
+[Docker image publishing](https://docs.docker.com/reference/cli/docker/image/push/).
 
 Dependencies are installed using committed lockfiles. Audits fail for high or
 critical npm vulnerabilities; new advisories can fail a previously passing run.
