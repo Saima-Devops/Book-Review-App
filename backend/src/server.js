@@ -4,7 +4,13 @@ const cors = require("cors");
 const initializeDatabase = require("./config/db");
 
 const app = express();
+app.use("/api/books", express.json({ limit: "768kb" }));
 app.use(express.json());
+app.use((error, req, res, next) => {
+  if (error.type === "entity.too.large") return res.status(413).json({ message: "Cover upload is too large. Choose a smaller image." });
+  if (error.type === "entity.parse.failed") return res.status(400).json({ message: "Invalid request body" });
+  next(error);
+});
 
 // Read allowed origins from environment variables
 const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(",") : ["http://localhost:3000"];
@@ -42,12 +48,14 @@ async function startServer() {
     await require("./config/migrateBookFields")(sequelize, Book);
     await Book.sync();
     await Review.sync();
+    const Report = require("./models/Report")(sequelize);
+    await Report.sync();
 
     console.log("✅ Database schema updated successfully!");
 
     // Insert sample books if table is empty
     const bookCount = await Book.count();
-    if (bookCount === 0) {
+    if (bookCount === 0 && await Report.count() === 0) {
       await Book.bulkCreate([
         { title: "The Pragmatic Programmer", author: "Andrew Hunt", rating: 4.8 },
         { title: "Clean Code", author: "Robert C. Martin", rating: 4.7 },
@@ -65,6 +73,7 @@ async function startServer() {
     app.use("/api/users", userRoutes);
     app.use("/api/books", bookRoutes);
     app.use("/api/reviews", reviewRoutes);
+    app.use("/api/reports", require("./routes/reportRoutes")(sequelize));
 
     // Health check route
     app.get("/", (req, res) => {

@@ -7,7 +7,7 @@ module.exports = async (sequelize, Book) => {
 
   // Add only missing fields; never recreate the table or guess legacy ownership.
   const columns = await query.describeTable(table);
-  for (const [name, type] of [["synopsis", DataTypes.TEXT], ["uploadedBy", DataTypes.INTEGER], ["catalogId", DataTypes.STRING(32)], ["sourceUrl", DataTypes.STRING(512)]]) {
+  for (const [name, type] of [["synopsis", DataTypes.TEXT], ["uploadedBy", DataTypes.INTEGER], ["catalogId", DataTypes.STRING(32)], ["sourceUrl", DataTypes.STRING(512)], ["coverData", DataTypes.TEXT("medium")], ["coverVersion", DataTypes.STRING(64)]]) {
     if (!columns[name]) await query.addColumn(table, name, { type, allowNull: true, ...(name === "catalogId" ? { unique: true } : {}) });
   }
 };

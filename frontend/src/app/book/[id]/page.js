@@ -2,6 +2,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { Flag } from "lucide-react";
+import ReportDialog from "../../../components/ReportDialog";
+import BookCoverImage from "../../../components/BookCoverImage";
 import {
   deleteReview,
   fetchBookDetails,
@@ -42,6 +45,7 @@ export default function BookDetails() {
   const [editingRating, setEditingRating] = useState(5);
   const [error, setError] = useState(null);
   const [message, setMessage] = useState("");
+  const [reportTarget, setReportTarget] = useState(null);
 
   const refreshBook = useCallback(() => fetchBookDetails(id).then(setBook), [id]);
 
@@ -129,9 +133,11 @@ export default function BookDetails() {
 
   return (
     <div className="min-h-screen p-6 book-detail">
+      {book.coverVersion && <div className="book-detail-cover"><BookCoverImage book={book} /></div>}
       <h1 className="text-3xl font-bold">{book.title}</h1>
       <p className="text-gray-600">by {book.author}</p>
       <p className="text-sm mt-2">★ {Number(book.rating).toFixed(1)}/5</p>
+      {user ? <button type="button" className="report-link" onClick={() => setReportTarget({ type: "book", id: book.id, title: book.title })}><Flag size={14} aria-hidden="true" />Report book</button> : <Link className="report-link" href="/login"><Flag size={14} aria-hidden="true" />Log in to report</Link>}
       {book.sourceUrl && <a className="catalog-source" href={book.sourceUrl} target="_blank" rel="noopener noreferrer">View on Open Library</a>}
       {book.synopsis && (
         <section className="synopsis-detail" aria-labelledby="synopsis-title">
@@ -180,6 +186,7 @@ export default function BookDetails() {
                   <>
                     <p>{review.comment}</p>
                     <p className="text-sm">★ {review.rating}/5</p>
+                    {user && <button type="button" className="report-link" aria-label={`Report review by ${review.username}`} onClick={() => setReportTarget({ type: "review", id: review.id, title: `Review by ${review.username}` })}><Flag size={14} aria-hidden="true" />Report review</button>}
                     {isOwner && (
                       <div className="review-actions">
                         <button type="button" className="chip" onClick={() => startEdit(review)}>
@@ -216,6 +223,7 @@ export default function BookDetails() {
       ) : (
         <p id="write-review" className="login-note">Log in to post your review.</p>
       )}
+      {reportTarget && <ReportDialog target={reportTarget} onClose={() => setReportTarget(null)} />}
     </div>
   );
 }

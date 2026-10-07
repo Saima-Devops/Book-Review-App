@@ -1,11 +1,31 @@
 # Logging
 
-Nginx access logs use escaped JSON with timestamp, method, path without query string, status, bytes, duration, and upstream status. Nginx error logs use standard timestamped text. Both are bind-mounted at APP_DIR/logs/proxy and persist across proxy restarts.
+Maintainer: Saima Usman.
 
-The proxy runs as UID/GID 101. Ansible creates a protected log directory owned by that UID and installs daily logrotate with 14 rotations and a 20 MiB size threshold. Rotation signals Nginx with USR1 to reopen files.
+## Managed Services
 
-Backend stdout/stderr remains available via docker compose logs backend. Existing application logs are standard text, not converted to JSON because source changes were excluded. Docker json-file logging wraps stdout/stderr and rotates at 10 MiB with five files per container.
+Use Northflank runtime logs for frontend/backend startup and failures, and
+Aiven metrics/logs for database availability, storage, and connections. Set
+retention and alerting according to the hosting plan. No centralized log export
+or alert service is provisioned by this repository.
 
-Do not capture real credentials, authorization headers, cookies, session tokens, database connection strings, or environment dumps. Do not put secrets into URL paths/query strings. Access logs omit those fields; standard Nginx error logs may include request context.
+## Compose / EC2
 
-Generate page, API, built asset, and 404 traffic with scripts/verify.sh. Restart the proxy, repeat verification, then show access/error files with sudo and backend output with compose logs. Record observed log persistence; no execution result is fabricated.
+Nginx access logs are escaped JSON: time, method, path without query string,
+status, bytes, duration, and upstream status. Error logs are standard text.
+Files are mounted at `logs/proxy` and persist across proxy restarts.
+
+Nginx runs as UID/GID 101. Ansible configures directory ownership and daily
+logrotate with 14 rotations and a 20 MiB threshold; USR1 reopens files.
+Container stdout/stderr uses Docker json-file rotation at 10 MiB with five files.
+
+```bash
+docker compose logs --tail=100 backend frontend database reverse-proxy
+sudo tail -n 20 logs/proxy/access.log
+sudo tail -n 20 logs/proxy/error.log
+```
+
+Run on the deployment host. Restrict log access. Do not publish environment
+dumps, passwords, JWTs, reset links, authorization headers, database URIs, or
+private keys. Nginx access fields deliberately omit credentials, but error logs
+and application exception output still require review.

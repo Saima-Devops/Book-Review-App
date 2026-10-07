@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { randomUUID } = require('node:crypto');
+const sharp = require('sharp');
 
 const origin = process.env.TEST_API_URL;
 if (!origin || process.env.ALLOW_TEST_WRITES !== 'yes' ||
@@ -81,6 +82,42 @@ test('real API supports registration, books, rating updates, and owner-only revi
   await request(`/api/books/${book.id}`, {}, 404);
   assert.deepEqual(await request(`/api/reviews/${book.id}`), []);
   assert.ok((await request('/api/books')).some((item) => item.id === seeded[0].id));
+
+  await request('/api/reports', {}, 401);
+  await request('/api/reports', { token: other.token }, 403);
+  await request('/api/reports/1', { method: 'PATCH', body: { action: 'remove' }, token: other.token }, 403);
+  assert.equal((await request('/api/reports/access', { token: other.token })).isAdmin, false);
+  const { book: flagged } = await request('/api/books', { method: 'POST', body: { title: `Moderation ${suffix}`, author: 'Other author' }, token: other.token }, 201);
+  const flaggedReview = await request('/api/reviews', { method: 'POST', body: { bookId: flagged.id, comment: 'Flagged review', rating: 1 }, token: other.token }, 201);
+  await request('/api/reviews', { method: 'POST', body: { bookId: flagged.id, comment: 'Keep this review', rating: 5 }, token: owner.token }, 201);
+  const reportBody = { targetType: 'review', targetId: flaggedReview.review.id, reason: 'spam', details: 'CI moderation fixture' };
+  await request('/api/reports', { method: 'POST', body: reportBody }, 401);
+  await request('/api/reports', { method: 'POST', body: reportBody, token: owner.token }, 201);
+  await request('/api/reports', { method: 'POST', body: reportBody, token: owner.token }, 409);
+  if (process.env.ADMIN_USER_IDS === String(owner.user.id)) {
+    assert.equal((await request('/api/reports/access', { token: owner.token })).isAdmin, true);
+    const queue = await request('/api/reports', { token: owner.token });
+    const report = queue.reports.find((item) => item.targetId === flaggedReview.review.id && item.targetType === 'review');
+    assert.ok(report);
+    await request(`/api/reports/${report.id}`, { method: 'PATCH', body: { action: 'remove', note: 'Verified spam' }, token: owner.token });
+    assert.equal((await request(`/api/books/${flagged.id}`)).rating, 5);
+    assert.equal((await request(`/api/reviews/${flagged.id}`)).length, 1);
+    await request(`/api/reports/${report.id}`, { method: 'PATCH', body: { action: 'dismiss' }, token: owner.token }, 409);
+    await request('/api/reports', { method: 'POST', body: { targetType: 'book', targetId: flagged.id, reason: 'other' }, token: owner.token }, 201);
+    const bookReport = (await request('/api/reports', { token: owner.token })).reports.find((item) => item.targetId === flagged.id && item.targetType === 'book');
+    await request(`/api/reports/${bookReport.id}`, { method: 'PATCH', body: { action: 'dismiss', note: 'Keep book' }, token: owner.token });
+    assert.equal((await request(`/api/books/${flagged.id}`)).id, flagged.id);
+    await request('/api/reports', { method: 'POST', body: { targetType: 'book', targetId: flagged.id, reason: 'spam' }, token: other.token }, 201);
+    const removal = (await request('/api/reports', { token: owner.token })).reports.find((item) => item.targetId === flagged.id && item.targetType === 'book');
+    await request(`/api/reports/${removal.id}`, { method: 'PATCH', body: { action: 'remove' }, token: owner.token });
+    await request(`/api/books/${flagged.id}`, {}, 404);
+    assert.deepEqual(await request(`/api/reviews/${flagged.id}`), []);
+    const audit = (await request('/api/reports?status=removed', { token: owner.token })).reports.find((item) => item.id === removal.id);
+    assert.equal(audit.moderatorId, owner.user.id);
+    assert.ok(audit.resolvedAt);
+  } else {
+    await request(`/api/books/${flagged.id}`, { method: 'DELETE', token: other.token });
+  }
 });
 
 test('concurrent review creation and book deletion never leave orphaned reviews', async () => {
@@ -123,4 +160,29 @@ test('catalog routes require login and catalog sources persist without unsafe li
   assert.equal(stored.synopsis, input.synopsis);
   await request('/api/books', { method: 'POST', body: { ...input, title: `Alternate title ${suffix}`, author: 'Alternate Author' }, token }, 400);
   await request(`/api/books/${book.id}`, { method: 'DELETE', token });
+});
+
+test('book covers persist, do not leak in JSON, and remain subject to book ownership', async () => {
+  const suffix = randomUUID();
+  const password = 'cover-integration-password';
+  const account = { name: 'Cover Reader', username: `cover-${suffix.slice(0,16)}`, email: `cover-${suffix}@example.test`, password };
+  await request('/api/users/register', { method: 'POST', body: account }, 201);
+  const owner = await request('/api/users/login', { method: 'POST', body: account });
+  const data = await sharp({ create: { width: 120, height: 180, channels: 3, background: '#087f80' } }).png().toBuffer();
+  const input = { title: `Cover fixture ${suffix}`, author: 'Cover author', cover: `data:image/png;base64,${data.toString('base64')}` };
+  const { book } = await request('/api/books', { method: 'POST', body: input, token: owner.token }, 201);
+  assert.match(book.coverVersion, /^[a-f0-9]{64}$/); assert.equal(book.coverData, undefined);
+  const stored = await request(`/api/books/${book.id}`); assert.equal(stored.coverData, undefined);
+  assert.equal((await request('/api/books')).find((item) => item.id === book.id).coverData, undefined);
+  const cover = await fetch(`${origin}/api/books/${book.id}/cover`);
+  assert.equal(cover.status, 200); assert.equal(cover.headers.get('content-type'), 'image/jpeg');
+  const metadata = await sharp(Buffer.from(await cover.arrayBuffer())).metadata();
+  assert.equal(metadata.width, 120); assert.equal(metadata.height, 180);
+  await request(`/api/books/${book.id}`, { method: 'DELETE' }, 401);
+  await request('/api/books', { method: 'POST', body: { ...input, title: 'Invalid cover', cover: 'data:image/jpeg;base64,AAAA' }, token: owner.token }, 400);
+  await request('/api/books', { method: 'POST', body: { ...input, title: 'Oversized cover', cover: 'x'.repeat(800000) }, token: owner.token }, 413);
+  await request(`/api/books/${book.id}`, { method: 'DELETE', token: owner.token });
+  await request(`/api/books/${book.id}/cover`, {}, 404);
+  // Retain a covered fixture for the disposable stack's database restart check.
+  await request('/api/books', { method: 'POST', body: { ...input, title: `Persistent cover ${suffix}` }, token: owner.token }, 201);
 });

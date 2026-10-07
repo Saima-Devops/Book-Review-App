@@ -2,6 +2,7 @@ import axios from "axios";
 
 // The public base URL has no /api suffix.
 const API_URL = `${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").replace(/\/$/, "")}/api`;
+export const bookCoverUrl = (book) => `${API_URL}/books/${book.id}/cover?v=${encodeURIComponent(book.coverVersion)}`;
 
 // General function to handle errors
 const handleApiError = (error, defaultMessage) => {
@@ -139,6 +140,23 @@ export const deleteReview = async (reviewId) => {
 };
 
 // ---------------------- Authentication Token ----------------------
+
+export const reportContent = async (report) => {
+  try { return (await axios.post(`${API_URL}/reports`, report)).data; }
+  catch (error) { throw new Error(handleApiError(error, "Unable to submit report")); }
+};
+export const fetchModerationAccess = async () => {
+  try { return (await axios.get(`${API_URL}/reports/access`)).data; }
+  catch (error) { throw new Error(handleApiError(error, "Unable to check moderation access")); }
+};
+export const fetchReports = async (status, page) => {
+  try { return (await axios.get(`${API_URL}/reports`, { params: { status, page } })).data; }
+  catch (error) { throw new Error(handleApiError(error, "Unable to load reports")); }
+};
+export const resolveReport = async (id, action, note) => {
+  try { return (await axios.patch(`${API_URL}/reports/${id}`, { action, note })).data; }
+  catch (error) { throw new Error(handleApiError(error, "Unable to resolve report")); }
+};
 
 export const setAuthToken = (token) => {
   if (token) {

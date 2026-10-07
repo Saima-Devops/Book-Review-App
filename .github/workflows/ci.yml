@@ -79,6 +79,8 @@ jobs:
       MYSQL_ROOT_PASSWORD: ci_root_password_not_for_production_1234
       MYSQL_PASSWORD: ci_app_password_not_for_production_12345
       JWT_SECRET: ci_jwt_secret_not_for_production_1234567
+      # First account in this fresh, disposable database is the test administrator.
+      ADMIN_USER_IDS: '1'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -104,7 +106,9 @@ jobs:
         env:
           TEST_API_URL: http://127.0.0.1
           ALLOW_TEST_WRITES: 'yes'
-        run: npm --prefix backend run test:integration
+        run: |
+          npm --prefix backend ci
+          npm --prefix backend run test:integration
       - name: Verify non-root runtime users
         run: |
           test "$(docker compose exec -T backend id -u)" = 1000
@@ -113,10 +117,14 @@ jobs:
       - name: Check database persistence after a restart
         run: |
           curl --fail --silent --show-error "$PUBLIC_URL/api/books" | python3 -c 'import json,sys; print(json.dumps(sorted(json.load(sys.stdin), key=lambda b: b["id"]), sort_keys=True))' > /tmp/ci-books-before.json
+          cover_id="$(python3 -c 'import json; print(next(b["id"] for b in json.load(open("/tmp/ci-books-before.json")) if b.get("coverVersion")))')"
+          curl --fail --silent --show-error "$PUBLIC_URL/api/books/$cover_id/cover" > /tmp/ci-cover-before.jpg
           docker compose restart database
           docker compose up -d --wait --wait-timeout 180
           curl --fail --silent --show-error "$PUBLIC_URL/api/books" | python3 -c 'import json,sys; print(json.dumps(sorted(json.load(sys.stdin), key=lambda b: b["id"]), sort_keys=True))' > /tmp/ci-books-after.json
           cmp /tmp/ci-books-before.json /tmp/ci-books-after.json
+          curl --fail --silent --show-error "$PUBLIC_URL/api/books/$cover_id/cover" > /tmp/ci-cover-after.jpg
+          cmp /tmp/ci-cover-before.jpg /tmp/ci-cover-after.jpg
       - name: Test HTTPS overlay using a temporary CI-only certificate
         run: |
           sudo install -d -o 101 -g 101 -m 0755 tls/active

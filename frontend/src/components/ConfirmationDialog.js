@@ -2,7 +2,7 @@
 import { useEffect, useId, useRef } from "react";
 import { CircleCheck, Trash2 } from "lucide-react";
 
-export default function ConfirmationDialog({ open, title, message, confirmLabel = "Done", onConfirm, onCancel, pending = false, error = "", destructive = false }) {
+export default function ConfirmationDialog({ open, title, message, confirmLabel = "Done", onConfirm, onCancel, pending = false, pendingLabel = "Deleting...", error = "", destructive = false }) {
   const dialogRef = useRef(null);
   const initialFocusRef = useRef(null);
   const titleId = useId();
@@ -54,7 +54,7 @@ export default function ConfirmationDialog({ open, title, message, confirmLabel 
     {error && <p className="error" role="alert">{error}</p>}
     <div className="confirmation-actions">
       {onCancel && <button ref={initialFocusRef} className="chip" type="button" disabled={pending} onClick={onCancel}>Cancel</button>}
-      <button ref={onCancel ? undefined : initialFocusRef} className="primary" type="button" disabled={pending} onClick={onConfirm}>{pending ? "Deleting..." : confirmLabel}</button>
+      <button ref={onCancel ? undefined : initialFocusRef} className="primary" type="button" disabled={pending} onClick={onConfirm}>{pending ? pendingLabel : confirmLabel}</button>
     </div>
   </dialog>;
 }

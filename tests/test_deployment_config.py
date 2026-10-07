@@ -94,6 +94,14 @@ class EnvironmentTests(unittest.TestCase):
         for key, value in settings.items():
             self.assertEqual(self.values()[key], value)
 
+    def test_admin_ids_are_explicit_validated_and_preserved(self):
+        self.assertEqual(self.configure(ADMIN_USER_IDS='7,12').returncode, 0)
+        self.assertEqual(self.configure().returncode, 0)
+        self.assertEqual(self.values()['ADMIN_USER_IDS'], '7,12')
+        for value in ('*', '7abc', '0', '-1', '7,', '7, 12'):
+            with self.subTest(value=value):
+                self.assertNotEqual(self.configure(ADMIN_USER_IDS=value).returncode, 0)
+
 
 @unittest.skipUnless(shutil.which('docker'), 'Docker Compose CLI is required; no daemon needed')
 class ComposeTests(unittest.TestCase):

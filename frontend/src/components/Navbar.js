@@ -3,10 +3,18 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { LibraryBig } from "lucide-react";
 import { useUser } from "../context/UserContext";
+import { fetchModerationAccess } from "../services/api";
 export default function Navbar() {
   const { user, logout } = useUser();
   const headerRef = useRef(null);
   const [scrolled, setScrolled] = useState(false);
+  const [adminId, setAdminId] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    if (user) fetchModerationAccess().then((access) => { if (active) setAdminId(access.isAdmin ? user.id : null); }).catch(() => { if (active) setAdminId(null); });
+    return () => { active = false; };
+  }, [user]);
 
   useEffect(() => {
     const updateScroll = () => setScrolled(window.scrollY > 16);
@@ -33,6 +41,7 @@ export default function Navbar() {
     <div className="nav-links">
       <Link href="/#collection">Discover</Link>
       <Link href="/#my-favourites">My favourites</Link>
+      {user && adminId === user.id && <Link href="/admin/reports">Moderation</Link>}
       {user ? <><span className="nav-greeting">Hello, {user.name}</span><button className="chip" onClick={logout}>Log out</button></> : <><Link href="/login">Log in</Link><Link className="primary" href="/register">Join the community ↗</Link></>}
     </div>
   </nav></header>;

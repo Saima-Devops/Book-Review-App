@@ -1,92 +1,74 @@
-# Username Login and Password Recovery
+# Password Recovery
 
-## Existing Accounts
+Maintainer: Saima Usman.
 
-Login now asks only for a username and password. New users choose a unique
-username during registration; email is still required for signup and recovery.
-Existing accounts can use their registered full name as their username, provided
-that name belongs to exactly one existing account. Accounts with duplicate names
-need an administrator to assign distinct values to the new `Users.username`
-column. Do not delete accounts, books, reviews or database volumes.
+Email recovery is implemented but requires operator-configured SMTP delivery.
+Without configuration, the form reports that recovery is unavailable. Every
+user receives messages at their own registered address; SMTP credentials belong
+to the application's sender account, not the recipient.
 
-The backend adds nullable username and reset-token fields plus an authentication
-version to existing databases at startup. This is an additive migration, not a
-database reset. Back up the database before deploying changes.
+## Account Login
 
-## Configure Email Manually
+Signup requires email and username. Login uses username/password. Legacy accounts
+may use a unique registered full name when username is absent. Duplicate legacy
+names require administrator assignment of distinct usernames.
 
-1. Obtain SMTP credentials from an email provider you already use. Verify the
-   sender address and use an app password or SMTP-specific credential, not your
-   normal mailbox password. Check the provider's limits and pricing first.
-2. On the EC2 host, open the protected `/opt/reading-room/.env` with your editor.
-   Add the following using the provider's actual values. Keep values unquoted
-   with no spaces, `$` or `#`, as required by the existing environment helper.
-   `SMTP_FROM` must be a plain email address, not a display name.
+## Backend Configuration
 
-   ```dotenv
-   PUBLIC_URL=https://YOUR_EC2_PUBLIC_IP
-   SMTP_HOST=YOUR_PROVIDER_SMTP_HOST
-   SMTP_PORT=587
-   SMTP_USER=YOUR_SMTP_USERNAME
-   SMTP_PASSWORD=YOUR_SMTP_APP_PASSWORD
-   SMTP_FROM=YOUR_VERIFIED_SENDER_EMAIL
-   ```
+Supply runtime settings or protected secrets on the backend only:
 
-3. Use port `587` for required STARTTLS or `465` for implicit TLS. Certificate
-   verification is enabled. Do not expose an SMTP port in the EC2 security group;
-   the backend needs outbound access to the provider. Production recovery
-   requires a valid HTTPS certificate for `PUBLIC_URL`. Your short-lived IP
-   certificate must be renewed before it expires.
-4. Keep `.env` out of Git and screenshots. Run `chmod 600 .env`. The existing
-   environment helper preserves these optional settings. They may also be
-   supplied as runtime environment variables when running the helper.
-5. After manually updating and reviewing your deployed checkout, build and
-   recreate the app services without changing the database volume:
+```dotenv
+PUBLIC_URL=https://FRONTEND-PUBLIC-HOSTNAME
+SMTP_HOST=SMTP-PROVIDER-HOSTNAME
+SMTP_PORT=587
+SMTP_USER=SENDER-ACCOUNT
+SMTP_PASSWORD=SMTP-APP-PASSWORD
+SMTP_FROM=VERIFIED-SENDER-EMAIL
+```
 
-   ```bash
-   cd /opt/reading-room
-   docker compose up -d --build backend frontend
-   docker compose ps
-   ```
+PUBLIC_URL is the frontend origin, not the backend address. Port 587 requires
+STARTTLS; 465 uses implicit TLS. Server certificate verification remains enabled.
+Use provider-approved SMTP credentials or an app password, not a normal mailbox
+password. Verify the sender and check sending limits, costs, and cloud egress rules.
 
-6. Open **Login > Forgot password**, enter a registered email address, and check
-   the inbox/spam folder. Follow the emailed link, choose a new password, and log
-   in with the username and new password. The previous password must fail; using
-   the same link again must fail. Also run your existing verification script.
+Northflank: configure backend runtime settings/secrets and redeploy.
+Compose: set optional values in the protected root .env and recreate the backend.
+Secrets Manager deployments can include SMTP fields in the existing JSON secret;
+retrieval uses the configured EC2 role. None of these settings belong in the frontend.
 
-## Optional AWS Secrets Manager Storage
+Gmail may be used for a small deployment when the account supports app passwords.
+It requires 2-Step Verification and an app password; account policies can prevent
+availability. Host smtp.gmail.com, port 587, with matching sender/user address.
+[Google app passwords](https://support.google.com/mail/answer/185833)
+and [SMTP settings](https://support.google.com/mail/answer/7104828).
 
-1. In the same AWS region as your instance, open the secret already used for
-   the app. Choose **Retrieve secret value > Edit**. Preserve the existing
-   database/JWT keys and add `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
-   `SMTP_PASSWORD`, and `SMTP_FROM` as string values. Never paste credentials
-   into GitHub issues, commits, screenshots or chat.
-2. Ensure the existing EC2 instance role can read this specific secret via
-   `secretsmanager:GetSecretValue`. If using a customer-managed KMS key, it also
-   needs scoped `kms:Decrypt` permission. Do not grant wildcard access.
-3. In your EC2 terminal, set `SECRET_SOURCE=aws`, `AWS_REGION=ap-south-1`,
-   `SECRET_ARN` to that secret's ARN, and `PUBLIC_URL` to your HTTPS origin.
-   Run `python3 scripts/configure-env.py --non-interactive` using your existing
-   image tag and database-volume settings. Review nonsecret settings first;
-   do not change database passwords without the documented rotation procedure.
-4. Follow steps 5 and 6 above. This feature does not create AWS resources,
-   retrieve credentials, send emails or deploy anything until you configure and
-   execute it yourself. Secrets Manager may incur charges; it is optional.
+## Verification
 
-## Security and Limits
+1. Request a reset for a registered address and confirm inbox/spam delivery.
+2. Confirm the link opens the intended frontend HTTPS origin.
+3. Set a new password and log in with the existing username.
+4. Verify the previous password, consumed link, and prior sessions no longer work.
+5. Check unknown-email requests return the same generic acknowledgement.
 
-- Reset tokens contain 256 bits of randomness; only SHA-256 hashes are stored.
-- Links expire after 30 minutes and are single-use. Database row locking
-  prevents concurrent requests from reusing a token.
-- The link keeps the token in a URL fragment, preventing proxy request logs
-  from capturing it. The recovery page removes it from the address bar.
-- Successful recovery invalidates earlier JWT sessions. Passwords use bcrypt.
-- Responses do not reveal whether an email is registered. Resends have a
-  one-minute cooldown and per-email request limits. Reset attempts also have a
-  rate limit; because the backend is behind one proxy, this limit is shared
-  across that proxy's clients. Limits are in memory and reset on backend restart.
-- If mail is not configured, the UI explicitly reports that recovery is
-  unavailable. Delivery/storage failures are logged without secrets; the user
-  receives the same generic response as an unknown account.
-- Favorites remain stored per account in that browser, as before, but guests
-  cannot save them. They are not synchronized between different devices.
+A generic acknowledgement alone does not prove delivery: delivery failures are
+intentionally not exposed as account-existence information. Check provider/log
+results without displaying reset tokens.
+
+## Security Properties and Limits
+
+Tokens contain 256 bits of randomness; only SHA-256 hashes are stored. Links
+expire after 30 minutes and are single-use. Row locking prevents concurrent
+reuse. Passwords are bcrypt-hashed; successful reset increments the session
+version to invalidate earlier JWTs.
+
+The token is placed in a URL fragment, not the server request query, and the
+reset page clears it from the address bar. Treat the full link as a secret.
+
+The backend uses resend cooldowns and in-memory rate limits. Behind a shared
+proxy, some limits are shared across clients; restarts reset counters.
+Multi-replica deployment requires a shared limiter. Public sender delivery and
+email-address verification are separate concerns; signup does not currently
+verify email ownership.
+
+Changing the frontend domain requires updating PUBLIC_URL and verifying reset
+emails again. Custom-domain configuration is optional and not automatic.

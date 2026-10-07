@@ -16,8 +16,13 @@ module.exports = (sequelize) => {
   router.get("/", bookController.getAllBooks);
   router.get("/catalog/search", authenticate, lookupLimit, catalog.search);
   router.get("/catalog/:catalogId", authenticate, lookupLimit, catalog.details);
+  router.get("/:id/cover", bookController.getCover);
   router.get("/:id", bookController.getBookById); // Ensure this route exists
-  router.post("/", authenticate, bookController.addBook);
+  router.post("/", authenticate, rateLimit({
+    windowMs: 60000, limit: 10, keyGenerator: (req) => String(req.user.userId),
+    standardHeaders: "draft-8", legacyHeaders: false,
+    message: { message: "Too many book submissions. Please try again shortly." },
+  }), bookController.addBook);
   router.delete("/:id", authenticate, bookController.deleteBook);
 
   return router;

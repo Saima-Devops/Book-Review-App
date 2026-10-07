@@ -1,212 +1,161 @@
-# The Reading Room
+# Book Shelf
 
-A book review app for discovering books, sharing ratings and reviews, and keeping a personal favourites list.
+Developed and maintained by **Saima Usman**.
+
+Book Shelf is a community book-review application for discovering titles, sharing
+synopses, writing reviews, and keeping a personal favourites collection.
 
 ## Features
 
-- Register, log in, and log out.
-- Browse books, search by title or author, and sort by title or rating.
-- Add a book with its title, author, and starting rating while logged in.
-- Post reviews with a 1-5 star rating.
-- Edit or delete your own reviews; ownership is checked by the API.
-- Update a book's average rating when reviews are added, edited, or deleted.
-- Save books in My favourites and filter the collection to saved books.
-- Use a responsive interface with collection and favourites navigation.
+- Register with a name, username, email, and password; log in with username and password.
+- Search books by title or author and sort the collection by title or rating.
+- Add a book with title, author, synopsis, and an optional initial rating.
+- Upload an optional book cover with a preview window; covers persist with the book.
+- Look up titles and descriptions through Open Library, with editable results and manual entry.
+- Delete only books uploaded by the signed-in account.
+- Write 1-5 star reviews and edit or delete personal reviews.
+- Recalculate average ratings when reviews change.
+- Save favourites while signed in, separately for each account in the current browser.
+- Report inappropriate books or reviews for administrator review.
+- Moderate reports, dismiss concerns, or remove content with recorded decisions.
+- Recover passwords by email when an administrator configures SMTP delivery.
+- Use responsive pages, sticky navigation, and a back-to-top control.
 
-Users, books, and reviews are stored in MySQL. Favourites are stored in browser local storage, separately for each signed-in user and guests. They persist on that browser but do not sync between devices. Adding a book currently means submitting its details, not uploading an ebook or cover file.
+Adding a book submits catalog information and an optional cover; it does not upload
+an ebook or audio file. See [book covers](docs/14-book-covers.md) for image limits.
+Catalog lookup is not AI generation. Favourites are browser-local
+and do not synchronize between devices or appear in database backups.
 
-## Tech stack
+## Technology
 
-| Layer | Technology |
+| Layer | Stack |
 | --- | --- |
-| Frontend | Next.js 15 App Router, React 19, CSS, Tailwind CSS 4, Axios |
-| API | Node.js, Express 4 |
-| Database | MySQL 8.4, Sequelize 6, mysql2 |
-| Authentication | JSON Web Tokens, bcryptjs password hashing |
-| Quality checks | ESLint, npm audit |
-| Containers | Docker, Docker Compose v2 |
-| Optional AWS automation | Terraform, Ansible, Bash |
+| Frontend | Next.js 15 App Router, React 19, Tailwind CSS 4, CSS, Axios, Lucide icons |
+| Backend | Node.js 22, Express 4, Sequelize 6, mysql2, Sharp image processing |
+| Data | MySQL 8.4; Users, Books, Reviews, and Reports |
+| Authentication | JWT sessions, bcrypt password hashes, session invalidation after password resets |
+| Email | Nodemailer with certificate-verified SMTP |
+| Delivery | GitHub Actions, Docker Hub, Docker Compose v2 |
+| Managed hosting | Northflank application services and Aiven MySQL |
+| Optional infrastructure | Terraform, Ansible, AWS EC2, Nginx |
 
-Docker images use Node.js 22 Alpine. Direct npm dependencies are pinned and both lockfiles are included for reproducible installs. Targeted overrides supply patched PostCSS for Next.js and UUID for Sequelize.
+Dependency versions are pinned in the application manifests and lockfiles.
 
-## Project structure
+## Quick Start: Local Docker Compose
 
-```text
-frontend/           Next.js app and frontend Dockerfile
-backend/            Express API, models, and backend Dockerfile
-infra/              Optional Terraform AWS infrastructure
-ansible/            Optional EC2 provisioning and deployment
-scripts/deploy.sh   Terraform/Ansible deployment helper
-docker-compose.yml  Frontend, backend, and MySQL services
-.env.example        Environment variable reference
-```
-
-## Fork and clone
-
-Fork this repository on GitHub, then clone your fork:
+Requirements: Git, Docker Engine/Desktop, Docker Compose v2, and OpenSSL.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
-cd YOUR_REPOSITORY
-```
-
-Use the actual repository name in both commands. Commit package lockfiles with dependency changes. Keep passwords, JWT secrets, and real environment files out of Git.
-
-## Run with Docker Compose
-
-Install Docker Engine or Docker Desktop with Compose v2. Create a root environment file:
-
-```bash
+git clone https://github.com/Saima-Devops/Book-Review-App.git
+cd Book-Review-App
 cp .env.example .env
+chmod 600 .env
 ```
 
-Edit `.env` with these values, replacing all secret placeholders with unique randomly generated values:
-
-```dotenv
-MYSQL_ROOT_PASSWORD=REPLACE_WITH_RANDOM_ROOT_PASSWORD
-MYSQL_DATABASE=book_review_db
-MYSQL_USER=bookreview_user
-MYSQL_PASSWORD=REPLACE_WITH_RANDOM_APP_PASSWORD
-JWT_SECRET=REPLACE_WITH_RANDOM_JWT_SECRET
-ALLOWED_ORIGINS=http://localhost:3000
-NEXT_PUBLIC_API_URL=http://localhost:3001
-```
-
-Generate each secret separately with `openssl rand -hex 32`. Compose maps `MYSQL_PASSWORD` to the backend's `DB_PASS`; extra `DB_*` variables in the example are unnecessary for Compose.
+Edit the root `.env`: set `PUBLIC_URL=http://localhost`, retain the database/user
+names, and replace all password/JWT placeholders with distinct secrets generated
+using `openssl rand -hex 32`. Leave `ADMIN_USER_IDS` empty until an administrator
+account has been identified. Keep this file outside version control.
 
 ```bash
 docker compose config --quiet
-docker compose up -d --build --wait --wait-timeout 300
+docker compose up -d --build --wait --wait-timeout 600
 docker compose ps
+PUBLIC_URL=http://localhost bash scripts/verify.sh
 ```
 
-Open [the app](http://localhost:3000). The [books API](http://localhost:3001/api/books) should respond. Sample books are created when the database is empty.
+Open [Book Shelf locally](http://localhost). Nginx publishes port 80 and routes
+`/api/*` to the private backend. Frontend port 3000, backend port 3001, and MySQL
+port 3306 are not published by Compose. The database volume defaults to
+`reading-room_db_data`; retained infrastructure names are compatibility identifiers,
+not the application brand.
 
-The browser calls the backend through `NEXT_PUBLIC_API_URL`. This URL must be browser-accessible and must not include an `/api` suffix. It is baked into the frontend during build, so rebuild the frontend after changing it. `ALLOWED_ORIGINS` must match the frontend URL exactly; multiple origins may be comma-separated.
-
-MySQL is accessible only inside the Compose network. Accounts, books, and reviews persist in the `mysql_data` named volume.
+HTTP localhost is for development. Public deployments require HTTPS.
+Initial sample books are added only when Books and Reports are both empty.
 
 ```bash
-docker compose logs --tail=100 backend frontend mysql
+docker compose logs --tail=100 backend frontend database reverse-proxy
 docker compose down
-docker compose up -d --wait --wait-timeout 300
 ```
 
-`docker compose down` preserves the database volume. `docker compose down -v` deletes it and its data. Database backups are separate from volume persistence. Changing password variables after initial MySQL initialization does not change existing database passwords.
+Routine shutdown preserves data. **Do not use `docker compose down -v` on a
+database containing valuable records.** Changing environment passwords does not
+rotate accounts in an already-initialized MySQL volume.
 
-## Local development without app containers
+## Managed Deployment
 
-Install Node.js 22 and npm. Start a local MySQL server and create a database and application user with access to that database. Alternatively, configure the root `.env` as above and use the existing MySQL service with the following temporary override. This publishes MySQL only on localhost for the API running on your host:
+The primary managed deployment uses two Northflank services and Aiven MySQL:
 
-```yaml
-# Save as compose.local.yml in the project root.
-services:
-  mysql:
-    ports:
-      - "127.0.0.1:3306:3306"
+```text
+Browser --HTTPS--> Next.js frontend --HTTPS--> Express backend --verified TLS--> MySQL
+                         /api/* proxy
 ```
+
+Published images share the [saim2026/book-shelf Docker Hub repository](https://hub.docker.com/r/saim2026/book-shelf).
+Select matching `frontend-build-RUN-ATTEMPT` and `backend-build-RUN-ATTEMPT` tags,
+or recorded digests. `frontend-latest` and `backend-latest` are moving aliases.
+The optional `proxy-latest` image is for Compose, not the two-service managed deployment.
+
+See the [installation guide](installation_guide.md) and
+[Northflank/Aiven configuration](docs/10-northflank-aiven.md).
+Publishing images does not automatically deploy them. SMTP and custom domains
+are optional configurations, not enabled by default.
+
+## Documentation
+
+| Topic | Guide |
+| --- | --- |
+| Installation and releases | [Installation guide](installation_guide.md), [PDF edition](installation_guide.pdf) |
+| Application use | [User guide](docs/12-user-guide.md) |
+| Architecture | [Deployment architecture](docs/01-architecture.md) |
+| Configuration | [Environment and ports](docs/02-env-and-ports.md) |
+| Startup | [Health checks](docs/03-healthchecks-and-depends-on.md) |
+| Routing | [Proxy routing and CORS](docs/04-proxy-routing-and-cors.md) |
+| Data protection | [Backup and restore](docs/05-persistence-and-backup.md) |
+| Logs and operations | [Logging](docs/06-logging.md), [Operations runbook](docs/07-operations-runbook.md) |
+| Optional EC2 TLS | [IP certificate deployment](docs/08-ip-https.md) |
+| CI and image publishing | [GitHub Actions](docs/09-github-ci.md) |
+| Catalog and recovery | [Open Library](docs/book-catalog.md), [Password recovery](docs/password-recovery.md) |
+| Moderation | [Content reporting](docs/11-content-moderation.md) |
+| Production limitations | [Release readiness](docs/13-production-readiness.md) |
+
+## Quality Checks
+
+Requirements: Node.js 22, npm, Python 3, and the Docker Compose CLI.
 
 ```bash
-docker compose -f docker-compose.yml -f compose.local.yml up -d --wait mysql
+npm --prefix backend ci
+npm --prefix backend test
+npm --prefix backend audit --audit-level=high
+npm --prefix frontend ci
+npm --prefix frontend run test:lint-glob
+npm --prefix frontend run test:hosting
+npm --prefix frontend run lint
+npm --prefix frontend audit --audit-level=high
+npm --prefix frontend run build
+python3 -m unittest discover -s tests -v
+git diff --check
 ```
 
-Create `backend/.env`:
+Database integration and container/HTTPS tests run on a disposable GitHub Actions
+stack. Never point write-enabled integration tests at a live database. npm audits
+do not cover operating-system packages; container scanning is a separate release
+control.
 
-```dotenv
-PORT=3001
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_NAME=book_review_db
-DB_USER=bookreview_user
-DB_PASS=YOUR_MYSQL_APP_PASSWORD
-JWT_SECRET=YOUR_RANDOM_JWT_SECRET
-ALLOWED_ORIGINS=http://localhost:3000
+## Project Layout
+
+```text
+frontend/             Next.js application and runtime API proxy
+backend/              Express routes, models, services, and tests
+docs/                 User and operator documentation
+tests/                Configuration and publishing tests
+scripts/              Publishing, backup, verification, and deployment utilities
+proxy/                Optional Compose Nginx configuration
+infra/ and ansible/   Optional AWS provisioning and deployment
+docker-compose.yml    Local/self-managed four-service stack
 ```
-
-Create `frontend/.env.local`:
-
-```dotenv
-NEXT_PUBLIC_API_URL=http://localhost:3001
-```
-
-Start the API in one terminal:
-
-```bash
-cd backend
-npm ci
-npm start
-```
-
-Start the frontend in another terminal from the repository root:
-
-```bash
-cd frontend
-npm ci
-npm run dev
-```
-
-Open [localhost:3000](http://localhost:3000). The API creates the tables on startup; the database itself must already exist.
-
-## Deploy on AWS EC2
-
-Use an Ubuntu EC2 instance with enough memory for MySQL and the frontend build; the included Terraform configuration uses `t3.medium`. Attach a security group allowing SSH port 22 from your own IP and application ports 3000 and 3001 from the intended audience. Do not expose MySQL port 3306.
-
-1. Install Git, Docker Engine, and Docker Compose v2 on the instance.
-2. Clone your GitHub fork onto the instance.
-3. Create the root `.env` as described above with unique secrets.
-4. Set `ALLOWED_ORIGINS=http://EC2_PUBLIC_IP:3000` and `NEXT_PUBLIC_API_URL=http://EC2_PUBLIC_IP:3001`. Use the actual public IP or DNS name.
-5. Run `docker compose config --quiet`, then `docker compose up -d --build --wait --wait-timeout 300`.
-6. Check `docker compose ps`, open the app, register, and test adding a book, reviewing it, editing/deleting the review, and saving a favourite.
-
-Use a stable address such as an Elastic IP. For an HTTPS deployment, configure TLS and routing through a reverse proxy and use matching HTTPS frontend/API URLs. The supplied Compose file exposes HTTP on ports 3000 and 3001.
-
-To deploy subsequent committed changes:
-
-```bash
-git pull --ff-only
-docker compose up -d --build --wait --wait-timeout 300
-```
-
-This preserves the named database volume. Refer to [Docker's Ubuntu installation guide](https://docs.docker.com/engine/install/ubuntu/) for host installation.
-
-### Optional Terraform and Ansible workflow
-
-Install Terraform, Ansible, and the AWS CLI on your workstation and configure AWS authentication. Create a dedicated SSH key, copy `infra/terraform.tfvars.example` to `infra/terraform.tfvars`, and set the region, instance type, your SSH IP range, and public key path.
-
-```bash
-export SSH_KEY="$HOME/.ssh/reading-room"
-export APP_REPO="https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git"
-bash scripts/deploy.sh plan
-bash scripts/deploy.sh apply
-```
-
-Review the Terraform plan before applying. The apply command creates infrastructure and prepares the EC2 host, but skips starting the app. Start it with:
-
-```bash
-bash scripts/deploy.sh configure
-```
-
-Preparation clones a public fork, transfers local application source, installs Docker, generates secrets on the first deployment, and sets public URLs. Later configure runs retain the secrets and database volume. These resources incur AWS charges.
-
-## Dependency checks
-
-Run in each application directory:
-
-```bash
-npm ci
-npm audit
-npm ls --all
-```
-
-Run frontend checks in `frontend/`:
-
-```bash
-npm run lint
-npm run build
-```
-
-Audit results reflect the advisory database at the time they run. Container operating-system packages require a separate image scan; rebuild with `docker compose build --pull` to refresh base images.
 
 ## Attribution
 
-Based on the [original Book Review App - Epic Book by Pravin Mishra](https://github.com/pravinmishraaws/book-review-app).
+Book Shelf is developed and maintained by Saima Usman, building on the
+[original Book Review App by Pravin Mishra](https://github.com/pravinmishraaws/book-review-app).

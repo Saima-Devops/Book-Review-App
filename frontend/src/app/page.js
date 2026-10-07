@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, PenLine } from "lucide-react";
+import { ChevronDown, PenLine, ImagePlus } from "lucide-react";
 import { addBook, deleteBook, fetchBooks } from "../services/api";
 import { useUser } from "../context/UserContext";
 import BookTitleLookup from "../components/BookTitleLookup";
 import ConfirmationDialog from "../components/ConfirmationDialog";
+import CoverUploadDialog from "../components/CoverUploadDialog";
+import BookCoverImage from "../components/BookCoverImage";
 
 export default function Home() {
   const { user } = useUser();
@@ -26,6 +28,8 @@ export default function Home() {
   const [collectionError, setCollectionError] = useState("");
   const [bookMessage, setBookMessage] = useState("");
   const [bookError, setBookError] = useState("");
+  const [cover, setCover] = useState(null);
+  const [coverDialog, setCoverDialog] = useState(false);
 
   const savedKey = user?.id ? `shelf-saved-${user.id}` : null;
 
@@ -93,9 +97,10 @@ export default function Home() {
 
     try {
       setUploading(true);
-      const response = await addBook(newBook);
+      const response = await addBook({ ...newBook, ...(cover ? { cover } : {}) });
       setBooks((currentBooks) => [response.book, ...currentBooks]);
       setNewBook({ title: "", author: "", synopsis: "", rating: 5, catalogId: null, sourceUrl: null });
+      setCover(null);
       setBookMessage("Book uploaded to the collection.");
       setUploadedBook(response.book.title);
     } catch (err) {
@@ -196,6 +201,8 @@ export default function Home() {
               rows={3}
             />
           </label>
+          <div className="cover-form-control"><span>Book cover (optional)</span><button className="chip" type="button" disabled={!user || uploading} onClick={() => setCoverDialog(true)}><ImagePlus size={16} aria-hidden="true" />{cover ? "Change cover" : "Upload cover"}</button>
+            {cover && <span className="cover-selected" role="status">Cover selected</span>}</div>
           <button className="primary upload-submit" type="submit" disabled={uploading || catalogLoading}>
             {uploading ? "Uploading..." : "Upload book"}
           </button>
@@ -255,9 +262,11 @@ export default function Home() {
             {visible.map((book) => (
               <article className="book-card" key={book.id}>
                 <div className={`cover cover-${Number(book.id) % 3}`}>
+                  <BookCoverImage book={book}>
                   <span className="cover-label">THE READER&apos;S EDITION</span>
                   <h3>{book.title}</h3>
                   <p>{book.author}</p>
+                  </BookCoverImage>
                   <button
                     className="save"
                     aria-label={`${saved.includes(book.id) ? "Remove from" : "Add to"} favourites: ${book.title}`}
@@ -301,6 +310,7 @@ export default function Home() {
           <p>No matching books. Try another search or save a favourite.</p>
         )}
       </section>
+      {coverDialog && <CoverUploadDialog initialCover={cover} onSave={(value) => { setCover(value); setCoverDialog(false); }} onClose={() => setCoverDialog(false)} />}
 
       <section id="my-favourites" className="favourites-panel">
         <div className="section-title">

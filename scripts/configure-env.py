@@ -93,6 +93,9 @@ def main():
     })
     for key in mail_keys:
         values[key] = os.environ.get(key, mail_payload.get(key, existing.get(key, '587' if key == 'SMTP_PORT' else '')))
+    values['ADMIN_USER_IDS'] = os.environ.get('ADMIN_USER_IDS', existing.get('ADMIN_USER_IDS', ''))
+    if values['ADMIN_USER_IDS'] and not re.fullmatch(r'[1-9]\d*(,[1-9]\d*)*', values['ADMIN_USER_IDS']):
+        raise ValueError('ADMIN_USER_IDS must be comma-separated positive account IDs, or empty.')
     if not re.fullmatch(r'[A-Za-z0-9_.-]+', values['APP_IMAGE_TAG']):
         raise ValueError('APP_IMAGE_TAG is not a valid image tag.')
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]+', values['DB_VOLUME_NAME']):

@@ -54,7 +54,7 @@ test('books can be listed and looked up', async () => {
   assert.deepEqual(list.body, [f.book]);
   const single = response();
   await controller.getBookById({ params: { id: 10 } }, single);
-  assert.equal(single.body, f.book);
+  assert.deepEqual(single.body, f.book);
 });
 
 test('missing book returns 404', async () => {

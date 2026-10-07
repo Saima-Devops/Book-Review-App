@@ -83,6 +83,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      ADMIN_USER_IDS: ${ADMIN_USER_IDS:-}
     networks: [front-tier, back-tier]
     read_only: true
     tmpfs: [/tmp]

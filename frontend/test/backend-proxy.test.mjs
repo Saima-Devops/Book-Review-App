@@ -44,6 +44,18 @@ test("HEAD and empty responses remain bodyless", async () => {
   assert.equal(await response.text(), "");
 });
 
+test("book cover bytes and JPEG content type survive the same-origin proxy", async () => {
+  const bytes = Uint8Array.from([255, 216, 255, 0, 128, 255, 217]);
+  const response = await proxyApi(new Request("https://frontend.test/api/books/9/cover?v=version"),
+    context(["books", "9", "cover"]), env, async (url) => {
+      assert.equal(url.pathname, "/api/books/9/cover");
+      assert.equal(url.search, "?v=version");
+      return new Response(bytes, { headers: { "content-type": "image/jpeg" } });
+    });
+  assert.equal(response.headers.get("content-type"), "image/jpeg");
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes);
+});
+
 test("rate limit retry header survives", async () => {
   const response = await proxyApi(new Request("https://frontend.example.test/api/books"), context(), env,
     async () => new Response("Try later", { status: 429, headers: { "retry-after": "60" } }));

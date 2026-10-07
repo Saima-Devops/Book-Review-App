@@ -2,6 +2,12 @@ const BookModel = require("../models/Book");
 const ReviewModel = require("../models/Review");
 const { Op } = require("sequelize");
 const { VALID_ID, sourceUrl } = require("../services/bookCatalog");
+const normalizeCover = require("../services/bookCover");
+const publicBook = (book) => {
+  const data = book.toJSON ? book.toJSON() : { ...book };
+  delete data.coverData;
+  return data;
+};
 
 module.exports = (sequelize) => {
   const Book = BookModel(sequelize);
@@ -10,8 +16,8 @@ module.exports = (sequelize) => {
   return {
     getAllBooks: async (req, res) => {
       try {
-        const books = await Book.findAll();
-        res.json(books);
+        const books = await Book.findAll({ attributes: { exclude: ["coverData"] } });
+        res.json(books.map(publicBook));
       } catch (error) {
         res.status(500).json({ message: "Server error while fetching books", error });
       }
@@ -20,13 +26,13 @@ module.exports = (sequelize) => {
     getBookById: async (req, res) => {
       try {
         const { id } = req.params;
-        const book = await Book.findByPk(id);
+        const book = await Book.findByPk(id, { attributes: { exclude: ["coverData"] } });
 
         if (!book) {
           return res.status(404).json({ message: "Book not found" });
         }
 
-        res.json(book);
+        res.json(publicBook(book));
       } catch (error) {
         res.status(500).json({ message: "Server error while fetching book", error });
       }
@@ -63,17 +69,29 @@ module.exports = (sequelize) => {
           return res.status(400).json({ message: "Book already exists" });
         }
 
+        const normalizedCover = await normalizeCover(req.body.cover);
         const newBook = await Book.create({
           title: title.trim(), author: author.trim(), rating: normalizedRating,
           synopsis: synopsis.trim(), uploadedBy: req.user.userId,
           catalogId, sourceUrl: catalogId ? sourceUrl(catalogId) : null,
+          ...normalizedCover,
         });
 
-        res.status(201).json({ message: "Book added successfully", book: newBook });
+        res.status(201).json({ message: "Book added successfully", book: publicBook(newBook) });
       } catch (error) {
+        if (error.status) return res.status(error.status).json({ message: error.message });
         if (error.name === "SequelizeUniqueConstraintError") return res.status(400).json({ message: "Book already exists" });
         res.status(500).json({ message: "Server error while adding book", error });
       }
+    },
+
+    getCover: async (req, res) => {
+      try {
+        const book = await Book.findByPk(req.params.id, { attributes: ["id", "coverData", "coverVersion"] });
+        if (!book?.coverData) return res.status(404).json({ message: "Cover not found" });
+        res.set({ "Content-Type": "image/jpeg", "X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=3600", ETag: `"${book.coverVersion}"` });
+        res.send(Buffer.from(book.coverData, "base64"));
+      } catch { res.status(500).json({ message: "Unable to load cover" }); }
     },
 
     deleteBook: async (req, res) => {
