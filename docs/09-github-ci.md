@@ -4,7 +4,9 @@ Maintainer: Saima Usman.
 
 Workflow: **Book Shelf CI and Docker Hub Delivery**, defined in
 `.github/workflows/ci.yml`. It runs for pushes to main, pull requests targeting
-main, and workflow_dispatch. Only successful main push runs publish images.
+main, and workflow_dispatch. Successful main push runs publish images automatically.
+Manual runs publish only on main with the explicit "Publish tested images to
+Docker Hub" checkbox selected. The default manual run validates without publishing.
 
 ## Checks
 
@@ -69,6 +71,15 @@ The publisher tags the exact tested images, pushes every version before latest
 promotion, and skips latest promotion when a rerun's commit is no longer main's
 head. Main jobs are serialized. Multi-tag promotion is not atomic: matching
 build tags/digests avoid mixed releases after partial failures.
+Each pushed tag is checked against Docker Hub using manifest inspection before
+publication is marked complete. Successful runs show full deployable image
+references in the final Docker Hub Delivery Report and publishing logs.
+
+The delivery report runs after checks even when publishing fails or is skipped.
+It distinguishes a verified release, a validation-only run, failed checks, partial
+pushes, and an unchanged latest alias. It never offers new deployment references
+without a complete verified publication. A failure after publishing remains
+visible rather than being reported as a successful pipeline.
 
 Images are Linux/AMD64. No database data, secret values, or certificate files are
 baked into them. Registry authentication uses password-stdin and a private
@@ -76,8 +87,8 @@ temporary Docker configuration removed on exit.
 
 ## Release Boundary
 
-Manual workflow runs execute tests but do not publish. An original main push
-rerun may publish with a new attempt number. High/critical npm advisories fail
+Manual workflow runs execute tests and publish only with explicit main-branch opt-in.
+An original main push rerun may publish with a new attempt number. High/critical npm advisories fail
 the workflow; advisory changes can fail a previously passing release.
 
 GitHub actions are pinned to release commit SHAs, the workflow token is read-only,

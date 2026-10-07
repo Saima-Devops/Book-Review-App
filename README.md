@@ -1,4 +1,4 @@
-# Book Shelf
+# Book Shelf - A 3-Tier Book Review Web Application
 
 Developed and maintained by **Saima Usman**.
 
@@ -40,6 +40,10 @@ and do not synchronize between devices or appear in database backups.
 | Optional infrastructure | Terraform, Ansible, AWS EC2, Nginx |
 
 Dependency versions are pinned in the application manifests and lockfiles.
+
+## Overll Architecture 
+
+![alt text](screenshots/Book-shelf-architecture.png)
 
 ## Quick Start: Local Docker Compose
 

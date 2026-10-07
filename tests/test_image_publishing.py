@@ -20,6 +20,7 @@ class PublishingTests(unittest.TestCase):
         self.bin.mkdir()
         self.log = self.directory / 'commands.jsonl'
         self.summary = self.directory / 'summary.md'
+        self.outputs = self.directory / 'outputs.txt'
         self.mock('docker', '''
             import json, os, pathlib, sys
             args = sys.argv[1:]
@@ -35,6 +36,8 @@ class PublishingTests(unittest.TestCase):
                 sys.exit(1)
             if args[0] == 'login' and os.environ.get('FAIL_LOGIN'):
                 sys.exit(1)
+            if args[:2] == ['manifest', 'inspect'] and os.environ.get('FAIL_VERIFY', '') and os.environ['FAIL_VERIFY'] in args[2]:
+                sys.exit(1)
         ''')
         self.mock('git', '''
             import os, sys
@@ -49,7 +52,8 @@ class PublishingTests(unittest.TestCase):
                         APP_IMAGE_TAG=f'ci-{SHA}', DOCKERHUB_USERNAME='saim2026',
                         DOCKERHUB_TOKEN='fake-registry-token', RUNNER_TEMP=str(self.directory),
                         COMMAND_LOG=str(self.log), GITHUB_STEP_SUMMARY=str(self.summary),
-                        MAIN_SHA=SHA, FAIL_LOGIN='', FAIL_INSPECT='', FAIL_PUSH='')
+                        MAIN_SHA=SHA, FAIL_LOGIN='', FAIL_INSPECT='', FAIL_PUSH='', FAIL_VERIFY='',
+                        GITHUB_OUTPUT=str(self.outputs), PUBLISH_IMAGES='false')
 
     def mock(self, name, source):
         path = self.bin / name
@@ -95,6 +99,11 @@ class PublishingTests(unittest.TestCase):
         self.assertFalse(Path(login['config']).exists())
         self.assertNotIn('fake-registry-token', result.stdout + result.stderr + self.log.read_text())
         self.assertIn('build-123-1', self.summary.read_text())
+        self.assertIn('saim2026/book-shelf:backend-build-123-1', self.summary.read_text())
+        self.assertIn('saim2026/book-shelf:frontend-build-123-1', result.stdout)
+        self.assertEqual(self.outputs.read_text(), 'published=true\nlatest_updated=true\n')
+        verified = [record['args'][2] for record in commands if record['args'][:2] == ['manifest', 'inspect']]
+        self.assertEqual(verified, expected)
         self.assertNotIn('build', [record['args'][0] for record in commands])
 
     def test_pr_manual_and_non_main_runs_never_authenticate(self):
@@ -126,6 +135,7 @@ class PublishingTests(unittest.TestCase):
         config = next(record['config'] for record in self.commands() if record['args'][0] == 'login')
         self.assertFalse(Path(config).exists())
         self.assertFalse(self.summary.exists())
+        self.assertFalse(self.outputs.exists())
 
     def test_old_commit_does_not_overwrite_latest(self):
         result = self.run_publisher(MAIN_SHA='b' * 40)
@@ -144,6 +154,25 @@ class PublishingTests(unittest.TestCase):
         self.assertEqual(self.pushes(), [])
         config = next(record['config'] for record in self.commands() if record['args'][0] == 'login')
         self.assertFalse(Path(config).exists())
+
+    def test_manual_publish_requires_explicit_opt_in_on_main(self):
+        result = self.run_publisher(GITHUB_EVENT_NAME='workflow_dispatch', PUBLISH_IMAGES='true')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.pushes()), 9)
+        self.assertIn('published=true', self.outputs.read_text())
+
+    def test_manual_opt_in_cannot_publish_another_branch(self):
+        result = self.run_publisher(GITHUB_EVENT_NAME='workflow_dispatch', PUBLISH_IMAGES='true',
+                                    GITHUB_REF='refs/heads/feature')
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(self.commands(), [])
+
+    def test_failed_registry_verification_never_reports_success(self):
+        result = self.run_publisher(FAIL_VERIFY=':backend-build-')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.outputs.exists())
+        self.assertFalse(self.summary.exists())
+        self.assertFalse(any(tag.endswith('-latest') for tag in self.pushes()))
 
 
 if __name__ == '__main__':

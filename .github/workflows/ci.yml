@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish_images:
+        description: 'Publish tested images to Docker Hub (main branch only)'
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -67,6 +73,10 @@ jobs:
     needs: [backend-and-config, frontend-checks]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    outputs:
+      publish_outcome: ${{ steps.publish.outcome }}
+      published: ${{ steps.publish.outputs.published }}
+      latest_updated: ${{ steps.publish.outputs.latest_updated }}
     env:
       # These credentials and volumes belong ONLY to this disposable runner.
       COMPOSE_PROJECT_NAME: reading-room-ci-${{ github.run_id }}-${{ github.run_attempt }}
@@ -142,10 +152,12 @@ jobs:
           curl --silent --show-error -I http://127.0.0.1/ | tr -d '\r' | grep -i '^Location: https://127.0.0.1/$'
           bash scripts/verify.sh
       - name: CD - Publish tested images to Docker Hub
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: publish
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_images))
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          PUBLISH_IMAGES: ${{ inputs.publish_images }}
         run: bash scripts/publish-images.sh
       - name: Show diagnostics on failure
         if: failure()
@@ -155,3 +167,24 @@ jobs:
       - name: Remove only the disposable CI stack and its test volume
         if: always()
         run: docker compose down --volumes --remove-orphans
+
+  delivery-report:
+    name: Docker Hub Delivery Report
+    if: ${{ always() }}
+    needs: [backend-and-config, frontend-checks, docker-integration]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Show verified image references or explain why images were not pushed
+        env:
+          BACKEND_RESULT: ${{ needs.backend-and-config.result }}
+          FRONTEND_RESULT: ${{ needs.frontend-checks.result }}
+          DOCKER_RESULT: ${{ needs.docker-integration.result }}
+          PUBLISH_OUTCOME: ${{ needs.docker-integration.outputs.publish_outcome }}
+          PUBLISHED: ${{ needs.docker-integration.outputs.published }}
+          LATEST_UPDATED: ${{ needs.docker-integration.outputs.latest_updated }}
+          PUBLISH_IMAGES: ${{ inputs.publish_images }}
+        run: python3 scripts/report-delivery.py
