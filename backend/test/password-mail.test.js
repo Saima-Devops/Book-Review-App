@@ -10,7 +10,7 @@ test("mail delivery requires verified TLS and keeps reset tokens in URL fragment
   const transport = mock.method(nodemailer, "createTransport", () => ({ sendMail }));
   Object.assign(process.env, { SMTP_HOST: "smtp.example.test", SMTP_PORT: "587", SMTP_USER: "test-user", SMTP_PASSWORD: "test-app-password", SMTP_FROM: "sender@example.test", PUBLIC_URL: "https://reading.example.test" });
   try {
-    await mailer()("reader@example.test", "a".repeat(64));
+    await mailer()("reader@example.test", "a".repeat(64), "reader");
     const config = transport.mock.calls[0].arguments[0];
     assert.equal(config.requireTLS, true);
     assert.equal(config.secure, false);
@@ -19,6 +19,8 @@ test("mail delivery requires verified TLS and keeps reset tokens in URL fragment
     const message = sendMail.mock.calls[0].arguments[0];
     assert.ok(message.text.includes(`/reset-password#token=${"a".repeat(64)}`));
     assert.equal(message.to, "reader@example.test");
+    assert.ok(message.text.includes("Your login username: reader"));
+    assert.ok(message.text.includes("use only the newest email"));
     process.env.SMTP_PORT = "465";
     mailer();
     assert.equal(transport.mock.calls[1].arguments[0].secure, true);

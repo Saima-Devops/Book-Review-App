@@ -11,7 +11,7 @@ export default function ForgotPassword() {
   const submit = async (event) => {
     event.preventDefault();
     setPending(true); setMessage(""); setError("");
-    try { setMessage((await requestPasswordReset(email)).message); }
+    try { setMessage((await requestPasswordReset(email.trim())).message); }
     catch (err) { setError(err.message); }
     finally { setPending(false); }
   };
@@ -23,7 +23,7 @@ export default function ForgotPassword() {
         <input id="recovery-email" type="email" autoComplete="email" maxLength={254} required className="w-full p-2 border rounded mt-1 mb-4" value={email} onChange={(event) => setEmail(event.target.value)} />
         <button disabled={pending} className="w-full bg-blue-600 text-white py-2 rounded">{pending ? "Sending..." : "Send reset link"}</button>
       </form>
-      {message && <p className="success mt-4" role="status">{message}</p>}
+      {message && <><p className="success mt-4" role="status">{message}</p><p className="login-note mt-4">Check your inbox and spam folder. Links expire after 30 minutes and work once. Wait at least one minute before requesting another, and use only the newest email.</p></>}
       {error && <p className="error mt-4" role="alert">{error}</p>}
       <Link href="/login" className="auth-link">Back to login</Link>
     </div>

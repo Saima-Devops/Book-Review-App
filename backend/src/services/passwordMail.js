@@ -15,13 +15,13 @@ module.exports = () => {
     connectionTimeout: 10000, socketTimeout: 15000,
     disableFileAccess: true, disableUrlAccess: true,
   });
-  return async (email, token) => {
+  return async (email, token, username) => {
     const link = new URL("/reset-password", origin);
     // URL fragments are not sent to web servers or recorded in proxy request logs.
     link.hash = new URLSearchParams({ token }).toString();
     await transport.sendMail({
       from: SMTP_FROM, to: email, subject: "Reset your Book Shelf password",
-      text: `A password reset was requested for your Book Shelf account.\n\n${link.href}\n\nThis link expires in 30 minutes and can be used once. If you did not request this, ignore this email.`,
+      text: `A password reset was requested for your Book Shelf account.\n\n${link.href}\n\nThis link expires in 30 minutes and can be used once. If you request another link, use only the newest email.${username ? `\n\nYour login username: ${username}` : ""}\nSign in with your username and new password after resetting it. Update any old password saved in your browser.\n\nIf you did not request this, ignore this email.`,
     });
   };
 };

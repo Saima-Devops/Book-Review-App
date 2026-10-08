@@ -66,6 +66,62 @@ test("unknown email receives the same generic response without mail delivery", a
   assert.equal(unknown.sendReset.mock.callCount(), 0);
 });
 
+test("recovery accepts surrounding email whitespace and supplies the login username", async () => {
+  const f = fixture(); const res = response();
+  await f.controller.forgotPassword({ body: { email: ` ${f.user.email.toUpperCase()} ` } }, res);
+  assert.equal(res.code, 200);
+  assert.equal(f.User.findOne.mock.calls[0].arguments[0].where.email, f.user.email);
+  assert.equal(f.sendReset.mock.calls[0].arguments[2], "reader");
+});
+
+test("a new recovery request after cooldown replaces the previous link", async () => {
+  const f = fixture();
+  await f.controller.forgotPassword({ body: { email: f.user.email } }, response());
+  const previous = f.user.resetTokenHash;
+  f.user.resetTokenExpires = new Date(Date.now() + 28 * 60 * 1000);
+  await f.controller.forgotPassword({ body: { email: f.user.email } }, response());
+  assert.equal(f.sendReset.mock.callCount(), 2);
+  assert.notEqual(f.user.resetTokenHash, previous);
+});
+
+test("a failed email delivery does not replace the stored link or change the password", async () => {
+  const f = fixture(); f.user.password = "original-hash";
+  f.sendReset.mock.mockImplementation(async () => { throw new Error("SMTP rejected"); });
+  const log = mock.method(console, "error", () => {});
+  try {
+    const res = response();
+    await f.controller.forgotPassword({ body: { email: f.user.email } }, res);
+    assert.equal(res.code, 200);
+    assert.equal(f.user.update.mock.callCount(), 0);
+    assert.equal(f.user.password, "original-hash");
+    assert.equal(log.mock.calls[0].arguments[0], "Password recovery delivery or storage failed.");
+  } finally { log.mock.restore(); }
+});
+
+test("reset makes the new password usable, rejects the old password, and prevents token reuse", async () => {
+  const f = fixture(); process.env.JWT_SECRET = "test-secret";
+  const token = "a".repeat(64);
+  f.user.password = await bcrypt.hash("old-password", 4);
+  f.user.resetTokenHash = createHash("sha256").update(token).digest("hex");
+  f.user.resetTokenExpires = new Date(Date.now() + 30000);
+  f.User.findOne = async ({ where }) => {
+    if (where.resetTokenHash) return where.resetTokenHash === f.user.resetTokenHash && f.user.resetTokenExpires > new Date() ? f.user : null;
+    if (where.username) return where.username === f.user.username ? f.user : null;
+    return null;
+  };
+  await f.controller.resetPassword({ body: { token, password: "new-password" } }, response());
+  const valid = response();
+  await f.controller.login({ body: { username: "reader", password: "new-password" } }, valid);
+  assert.ok(valid.body.token);
+  const old = response();
+  await f.controller.login({ body: { username: "reader", password: "old-password" } }, old);
+  assert.equal(old.code, 400);
+  const reused = response();
+  await f.controller.resetPassword({ body: { token, password: "another-password" } }, reused);
+  assert.equal(reused.code, 400);
+  assert.equal(await bcrypt.compare("new-password", f.user.password), true);
+});
+
 test("reset hashes the password, consumes token, and increments session version", async () => {
   const f = fixture(); const res = response();
   await f.controller.resetPassword({ body: { token: "a".repeat(64), password: "new-password" } }, res);

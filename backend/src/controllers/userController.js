@@ -80,7 +80,7 @@ module.exports = (sequelize, options = {}) => {
     },
 
     forgotPassword: async (req, res) => {
-      const email = req.body.email;
+      const email = typeof req.body.email === "string" ? req.body.email.trim() : req.body.email;
       if (typeof email !== "string" || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return res.status(400).json({ message: "Enter a valid email address." });
       }
@@ -92,7 +92,7 @@ module.exports = (sequelize, options = {}) => {
           const user = await User.findOne({ where: { email: email.trim().toLowerCase() }, transaction, lock: transaction.LOCK.UPDATE });
           if (!user || new Date(user.resetTokenExpires).getTime() > Date.now() + 29 * 60 * 1000) return;
           const token = randomBytes(32).toString("hex");
-          await send(user.email, token);
+          await send(user.email, token, user.username || user.name);
           await user.update({ resetTokenHash: tokenHash(token), resetTokenExpires: new Date(Date.now() + 30 * 60 * 1000) }, { transaction });
         });
       } catch {

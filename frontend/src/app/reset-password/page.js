@@ -16,14 +16,20 @@ export default function ResetPassword() {
     const value = new URLSearchParams(window.location.hash.slice(1)).get("token") || "";
     setToken(value);
     if (!/^[a-f0-9]{64}$/.test(value)) setError("This reset link is invalid. Request a new one.");
-    // Remove the secret from the address bar, history and subsequent referrers.
-    window.history.replaceState(null, "", window.location.pathname);
+    // Keep the fragment until success so refreshing does not discard a valid link.
+    // URL fragments are never sent in HTTP requests or Referer headers.
   }, []);
   const submit = async (event) => {
     event.preventDefault(); setError("");
     if (password !== confirmation) { setError("Passwords do not match."); return; }
+    if (new TextEncoder().encode(password).length > 72) { setError("Password must be no more than 72 bytes. Use fewer characters."); return; }
     setPending(true);
-    try { setMessage((await resetPassword(token, password)).message); logout(); }
+    try {
+      setMessage((await resetPassword(token, password)).message);
+      window.history.replaceState(null, "", window.location.pathname);
+      setToken(""); setPassword(""); setConfirmation("");
+      logout();
+    }
     catch (err) { setError(err.message); }
     finally { setPending(false); }
   };
@@ -37,7 +43,7 @@ export default function ResetPassword() {
         <input id="confirm-password" type="password" autoComplete="new-password" required minLength={8} maxLength={72} className="w-full p-2 border rounded mt-1 mb-4" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />
         <button disabled={pending || !/^[a-f0-9]{64}$/.test(token)} className="w-full bg-blue-600 text-white py-2 rounded">{pending ? "Saving..." : "Change password"}</button>
       </form>}
-      {message && <p className="success" role="status">{message}</p>}
+      {message && <><p className="success" role="status">{message}</p><p className="login-note mt-4">Sign in with your username and new password, not your email address. Update any old password saved in your browser.</p></>}
       {error && <p className="error mt-4" role="alert">{error}</p>}
       <Link href={message ? "/login" : "/forgot-password"} className="auth-link">{message ? "Back to login" : "Request a new reset link"}</Link>
     </div>
