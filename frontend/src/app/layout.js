@@ -14,7 +14,8 @@ export default function RootLayout({ children }) {
         <div className="footer-identity">
           <Link href="/" className="footer-brand"><LibraryBig size={22} strokeWidth={1.6} aria-hidden="true" /><span>Book Shelf</span></Link>
           <p className="footer-tagline"><Sparkles size={16} strokeWidth={1.6} aria-hidden="true" /><span>A good book opens a new world!</span></p>
-          <small>Developed by Saima Usman. All rights reserved &copy; 2026.</small>
+          <small className="footer-copyright">Developed by <a href="https://saima-devops.github.io/DevOps-Learning-Hub/about/index.html">Saima Usman</a>. All rights reserved &copy; 2026.</small>
+          <small className="footer-attribution">Inspired by Pravin Mishra&apos;s Epic Book.</small>
         </div>
         <nav className="footer-links" aria-label="Footer navigation">
           <Link href="/#collection">Discover</Link>

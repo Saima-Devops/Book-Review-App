@@ -159,7 +159,7 @@ export default function Home() {
         <div>
           <span className="eyebrow">ADD TO THE SHELF</span>
           <h2 id="upload-book-title">Upload a book</h2>
-          <p>Add your favorite book and its synopsis to the collection, and invite the community to review it.</p>
+          <p>Add your favorite book and its synopsis to the collection, and invite the community to review it. Use Auto Suggestion to find your book and its details.</p>
         </div>
         <form onSubmit={handleBookSubmit}>
           <BookTitleLookup book={newBook} setBook={setNewBook} enabled={Boolean(user)} disabled={uploading} onBusyChange={setCatalogLoading} />

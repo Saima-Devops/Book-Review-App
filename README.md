@@ -1,4 +1,4 @@
-# Book Shelf - A 3-Tier Book Review Web Application
+# Book Shelf - a '3-Tier' Book Review Web Application
 
 Developed and maintained by **Saima Usman**.
 

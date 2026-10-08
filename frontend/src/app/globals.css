@@ -94,3 +94,26 @@ button,.primary,.chip,.back-to-top,.nav-links .chip{border-radius:999px}
 .confirmation-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:24px}
 .confirmation-actions button{min-height:44px;padding:10px 20px;font-size:14px;font-weight:600}
 @media(max-width:390px){.confirmation-dialog{padding:24px}.confirmation-actions button{padding:10px 16px}}
+.mobile-nav-actions,.mobile-navigation{display:none}
+.footer-copyright,.footer-attribution{display:block;line-height:1.7;overflow-wrap:anywhere}
+.footer-attribution{margin-top:6px}.footer-copyright a{color:var(--teal)}.footer-copyright a:hover{text-decoration:underline}
+@media(max-width:760px){
+  .nav{position:relative;flex-direction:row;align-items:center;gap:10px;padding:14px 18px}
+  .nav-links{display:none}
+  .mobile-nav-actions{display:flex;align-items:center;gap:8px;margin-left:auto;min-width:0}
+  .mobile-join{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:10px 12px;background:var(--teal);color:white;font:600 12px/1.3 var(--font-navigation);white-space:nowrap}
+  .mobile-join:hover{background:#056669;color:white}
+  .mobile-menu-toggle{display:grid;place-items:center;flex-shrink:0;width:40px;height:40px;padding:0;border:1px solid #cdd9d5;background:transparent;color:var(--teal)}
+  .mobile-navigation:not([hidden]){position:absolute;top:100%;left:18px;right:18px;display:flex;flex-direction:column;gap:4px;max-height:calc(100dvh - var(--header-height,90px) - 24px);overflow-y:auto;padding:12px;background:white;border:1px solid #dce2dd;border-radius:8px;box-shadow:0 8px 22px #193c471a;font:500 14px/1.5 var(--font-navigation)}
+  .mobile-navigation>a{padding:10px 12px;color:var(--ink);border-radius:4px}
+  .mobile-navigation>a:hover{background:#edf6f3;color:var(--teal)}
+  .mobile-navigation .nav-greeting{padding:8px 12px}.mobile-navigation .chip{align-self:flex-start;margin:0 12px}
+  .section-title{flex-wrap:wrap;align-items:center}
+  .section-title>.chip{flex-shrink:0;white-space:nowrap;min-height:40px;line-height:1.4}
+  .primary,.chip,.confirmation-actions button,.review-actions button{white-space:nowrap;max-width:100%;line-height:1.4;border-radius:999px}
+  .cover-picker-actions,.confirmation-actions{flex-wrap:wrap}
+  .footer-inner{padding:28px 20px 84px;gap:20px}
+  .footer-identity{min-width:0;width:100%}.footer-tagline{align-items:flex-start}
+  .footer-links{gap:8px 24px}
+}
+@media(max-width:390px){.nav{padding-left:12px;padding-right:12px;gap:6px}.mobile-nav-actions{gap:6px}.mobile-join{width:100px;white-space:normal;padding:8px 10px;font-size:11px;text-align:center}.brand-block>small{gap:3px;font-size:7px}.mobile-menu-toggle{width:36px;height:36px}}
