@@ -50,6 +50,19 @@ Dependency versions are pinned in the application manifests and lockfiles.
 
 ![Book Shelf application and deployment architecture](screenshots/Book-shelf-architecture.png)
 
+## Managed Hosting
+
+```mermaid
+flowchart LR
+  Reader["Browser"] -->|"HTTPS"| Frontend["Northflank: book-shelf-frontend\nNext.js :3000"]
+  Frontend -->|"HTTPS /api/*\nAuthorization forwarded"| Backend["Northflank: book-shelf-backend\nExpress :3001"]
+  Backend -->|"MySQL verified TLS"| DB[("Aiven MySQL\nbook_shelf")]
+  Backend -->|"Optional verified SMTP"| Mail["Email provider"]
+  Actions["GitHub Actions"] -->|"Tested versioned images"| Registry["Docker Hub\nsaim2026/book-shelf"]
+  Registry -. "Manual release selection" .-> Frontend
+  Registry -. "Manual release selection" .-> Backend
+```
+
 ## Quick Start: Local Docker Compose
 
 Requirements: Git, Docker Engine/Desktop, Docker Compose v2, and OpenSSL.
