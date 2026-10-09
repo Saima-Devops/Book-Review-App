@@ -3,6 +3,7 @@ import gzip
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -18,6 +19,15 @@ class AivenBackupTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name)
+        # Expose only required utilities, never host-installed MySQL/Docker clients.
+        self.tools = self.home / 'tools'
+        self.tools.mkdir()
+        for name in ('bash', 'python3', 'gzip', 'mktemp', 'dirname', 'mkdir',
+                     'date', 'mv', 'chmod', 'cp', 'rm', 'ls', 'cat', 'touch'):
+            executable = sys.executable if name == 'python3' else shutil.which(name)
+            if not executable:
+                self.fail(f'Required test utility is missing: {name}')
+            (self.tools / name).symlink_to(executable)
         self.client = self.home / 'mysqldump'
         self.log = self.home / 'calls.jsonl'
         self.ca = self.home / 'certificate with spaces.pem'
@@ -37,7 +47,7 @@ class AivenBackupTests(unittest.TestCase):
         self.client.chmod(0o755)
         self.config = self.home / '.config/book-shelf/aiven-backup.conf'
         self.backups = self.home / 'backups'
-        self.env = dict(os.environ, HOME=str(self.home), AIVEN_HOST='db.example.test',
+        self.env = dict(os.environ, HOME=str(self.home), PATH=str(self.tools), AIVEN_HOST='db.example.test',
                         AIVEN_PORT='24720', AIVEN_USER='avnadmin', AIVEN_DATABASE='book_shelf',
                         AIVEN_CA=str(self.ca), AIVEN_MYSQLDUMP=str(self.client),
                         AIVEN_BACKUP_CLIENT='auto', AIVEN_MYSQL_IMAGE='',
@@ -131,7 +141,7 @@ class AivenBackupTests(unittest.TestCase):
         brew = bin_dir / 'brew'
         brew.write_text('#!/bin/bash\nif [[ "$1" = --prefix && "$2" = mysql-client@8.4 ]]; then printf "%s\\n" "$TEST_BREW_PREFIX"; else exit 1; fi\n')
         brew.chmod(0o755)
-        result = self.run_backup(AIVEN_MYSQLDUMP='', PATH=f'{bin_dir}:/usr/bin:/bin', TEST_BREW_PREFIX=str(prefix))
+        result = self.run_backup(AIVEN_MYSQLDUMP='', PATH=f'{bin_dir}:{self.tools}', TEST_BREW_PREFIX=str(prefix))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(self.archives()), 1)
 
@@ -141,7 +151,7 @@ class AivenBackupTests(unittest.TestCase):
         compressor = bin_dir / 'gzip'
         compressor.write_text('#!/bin/bash\ncat >/dev/null\nexit 1\n')
         compressor.chmod(0o755)
-        result = self.run_backup(PATH=f'{bin_dir}:{os.environ["PATH"]}')
+        result = self.run_backup(PATH=f'{bin_dir}:{self.tools}')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.archives(), [])
         self.assertFalse(list(self.backups.glob('*/.*partial')))
@@ -209,7 +219,7 @@ class AivenBackupTests(unittest.TestCase):
         '''))
         docker.chmod(0o755)
         return dict(AIVEN_MYSQLDUMP='', AIVEN_BACKUP_CLIENT='auto',
-                    PATH=f'{bin_dir}:/usr/bin:/bin', CACHED_IMAGE='mysql:8.4',
+                    PATH=f'{bin_dir}:{self.tools}', CACHED_IMAGE='mysql:8.4',
                     EXPECTED_CNF='[client]\npassword="synthetic-password"\n',
                     DOCKER_DOWN='', FAIL_PULL='', password='inherited-must-not-leak', **overrides)
 
@@ -258,6 +268,26 @@ class AivenBackupTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('Open Docker Desktop', result.stderr)
         self.assertFalse(any(call['args'][0] == 'run' for call in self.calls()))
+
+    def test_stopped_docker_auto_falls_back_to_fake_local_client(self):
+        env = self.docker_env()
+        env['DOCKER_DOWN'] = 'yes'
+        (self.home / 'docker-bin/mysqldump').symlink_to(self.client)
+        result = self.run_backup(**env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.archives()), 1)
+        self.assertTrue(any('--ssl-mode=VERIFY_IDENTITY' in call['args'] for call in self.calls()))
+        self.assertFalse(any(call['args'][0] == 'run' for call in self.calls()))
+
+    def test_forced_docker_does_not_fall_back_to_local_client(self):
+        env = self.docker_env()
+        env.update(DOCKER_DOWN='yes', AIVEN_BACKUP_CLIENT='docker')
+        (self.home / 'docker-bin/mysqldump').symlink_to(self.client)
+        result = self.run_backup(**env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Open Docker Desktop', result.stderr)
+        self.assertEqual(self.archives(), [])
+        self.assertFalse(any('--ssl-mode=VERIFY_IDENTITY' in call['args'] for call in self.calls()))
 
     def test_failed_docker_download_does_not_create_a_backup(self):
         env = self.docker_env()
