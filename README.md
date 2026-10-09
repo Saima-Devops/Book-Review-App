@@ -5,6 +5,8 @@ Developed and maintained by **Saima Usman**.
 Book Shelf is a community book-review application for discovering titles, sharing
 synopses, writing reviews, and keeping a personal favourites collection.
 
+**Live application:** [books.cloudexpert.store](https://books.cloudexpert.store)
+
 ## Features
 
 - Register with a name, username, email, and password; log in with username and password.
@@ -35,15 +37,18 @@ and do not synchronize between devices or appear in database backups.
 | Data | MySQL 8.4; Users, Books, Reviews, and Reports |
 | Authentication | JWT sessions, bcrypt password hashes, session invalidation after password resets |
 | Email | Nodemailer with certificate-verified SMTP |
+| Domain and mailboxes | GoDaddy DNS, Northflank-managed HTTPS, Zoho Mail |
 | Delivery | GitHub Actions, Docker Hub, Docker Compose v2 |
 | Managed hosting | Northflank application services and Aiven MySQL |
+| Monitoring | Aiven database metrics and notifications, Northflank infrastructure alerts, UptimeRobot external checks |
+| Alert delivery | Slack for Northflank events; Zoho-hosted email for Aiven and UptimeRobot notifications |
 | Optional infrastructure | Terraform, Ansible, AWS EC2, Nginx |
 
 Dependency versions are pinned in the application manifests and lockfiles.
 
-## Overll Architecture 
+## Overall Architecture
 
-![alt text](screenshots/Book-shelf-architecture.png)
+![Book Shelf application and deployment architecture](screenshots/Book-shelf-architecture.png)
 
 ## Quick Start: Local Docker Compose
 
@@ -96,14 +101,58 @@ Browser --HTTPS--> Next.js frontend --HTTPS--> Express backend --verified TLS-->
 ```
 
 Published images share the [saim2026/book-shelf Docker Hub repository](https://hub.docker.com/r/saim2026/book-shelf).
-Select matching `frontend-build-RUN-ATTEMPT` and `backend-build-RUN-ATTEMPT` tags,
-or recorded digests. `frontend-latest` and `backend-latest` are moving aliases.
+Select matching `frontend-sha-COMMIT` and `backend-sha-COMMIT` tags,
+`frontend-build-RUN-ATTEMPT` and `backend-build-RUN-ATTEMPT` tags, or recorded
+digests. `frontend-latest` and `backend-latest` are moving aliases.
 The optional `proxy-latest` image is for Compose, not the two-service managed deployment.
 
 See the [installation guide](installation_guide.md) and
 [Northflank/Aiven configuration](docs/10-northflank-aiven.md).
 Publishing images does not automatically deploy them. SMTP and custom domains
-are optional configurations, not enabled by default.
+are configured for the live application but must be configured separately for
+new installations. The live frontend uses `books.cloudexpert.store`, with DNS
+managed at GoDaddy and HTTPS handled by Northflank. Password-reset email is sent
+through Zoho Mail using a dedicated SMTP application password stored as a backend
+secret, never in frontend variables or source control.
+
+## Monitoring and Alerting
+
+The managed deployment combines platform monitoring with independent external
+checks. Notification settings are maintained in each provider's console; cloning
+this repository does not create monitors or subscribe notification recipients.
+
+| Service | Coverage | Notification destination |
+| --- | --- | --- |
+| Aiven | MySQL CPU, memory, disk usage, I/O, and load metrics; provider performance, outage, and maintenance notifications | `saima@cloudexpert.store` |
+| Northflank | Frontend/backend container crashes, evictions, sustained CPU/memory pressure, and selected deployment events | Slack channel `book-shelf-alerts` |
+| UptimeRobot: website | HTTPS availability of `https://books.cloudexpert.store` | DOWN and recovery emails to `saima@cloudexpert.store` |
+| UptimeRobot: API and database | HTTP GET of `https://books.cloudexpert.store/api/books`, exercising the frontend proxy, backend, and Aiven MySQL query | DOWN and recovery emails to `saima@cloudexpert.store` |
+
+Both UptimeRobot monitors use five-minute checks on the free plan. A successful
+homepage response does not prove database availability; the separate API monitor
+covers that dependency. An API alert identifies a failure somewhere in the request
+chain, not necessarily a database outage. Short incidents between checks can be
+missed, and these monitors do not test login, email delivery, or every user workflow.
+
+Northflank's documented sustained CPU and memory alerts trigger at 90% usage or
+higher for five minutes. Notification intervals suppress repeated alerts; they are
+not configurable CPU/memory thresholds. Northflank volume alerts do not monitor
+the externally hosted Aiven database. Aiven notification contacts receive provider
+notifications, rather than custom metric-threshold rules created by this repository.
+
+Monitoring setup and notification delivery were tested, including UptimeRobot's
+simulated DOWN and UP messages for both monitors. Test notifications are not actual
+outages and do not establish historical uptime or an availability guarantee.
+
+For an incident, check the affected UptimeRobot monitor, inspect Northflank service
+status and logs, and review Aiven service status, metrics, and logs. Keep database
+backups separate from monitoring; an alert is not a backup or automatic recovery.
+
+Provider references: [Aiven monitoring](https://aiven.io/docs/platform/howto/list-monitoring),
+[Aiven notification contacts](https://aiven.io/docs/platform/howto/technical-emails),
+[Northflank alerts](https://northflank.com/docs/v1/application/observe/set-infrastructure-alerts),
+[Northflank Slack integration](https://northflank.com/docs/v1/application/observe/configure-notification-integrations),
+and [UptimeRobot notification testing](https://help.uptimerobot.com/en/articles/11602913-how-to-test-notifications-in-uptimerobot-quick-guide).
 
 ## Documentation
 
