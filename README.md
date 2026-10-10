@@ -221,6 +221,19 @@ infra/ and ansible/   Optional AWS provisioning and deployment
 docker-compose.yml    Local/self-managed four-service stack
 ```
 
+## Live App Snapshots
+
+![alt text](screenshots/Screenshot-1.png)
+![alt text](screenshots/Screenshot-2.png)
+![alt text](screenshots/Screenshot-3.png)
+![alt text](screenshots/Screenshot-4.png)
+![alt text](screenshots/Screenshot-5.png)
+![alt text](screenshots/Screenshot-6.png)
+![alt text](screenshots/Screenshot-7.png)
+![alt text](screenshots/Screenshot-8.png)
+![alt text](screenshots/Screenshot-9.png)
+
+
 ## Attribution
 
 Book Shelf is developed and maintained by Saima Usman, building on the
